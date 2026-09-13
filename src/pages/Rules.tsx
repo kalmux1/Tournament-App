@@ -11,12 +11,6 @@ const RULES = [
   { icon: Repeat, title: "Check-Ball & Possession", text: "Ball is checked behind the arc after each dead ball. Change of possession on defensive rebounds must be cleared." },
 ]
 
-const EMERGENCY = [
-  { label: "Tournament Control Room", phone: "+91 90000 00000" },
-  { label: "On-site Medical / First Aid", phone: "+91 90000 12345" },
-  { label: "Campus Security", phone: "+91 90000 99999" },
-]
-
 export default function Rules() {
   const [sent, setSent] = useState(false)
 
@@ -86,23 +80,9 @@ export default function Rules() {
               </form>
             )}
             <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-400">
-              <span className="flex items-center gap-1.5"><Mail className="h-4 w-4 text-gold-500" /> organizers@imrt.edu</span>
+              <span className="flex items-center gap-1.5"><Mail className="h-4 w-4 text-gold-500" /> kal.mux.cyber@gmail.com</span>
               <span className="flex items-center gap-1.5"><Phone className="h-4 w-4 text-gold-500" /> +91 90000 00000</span>
             </div>
-          </div>
-
-          <div className="glass rounded-2xl p-6">
-            <h3 className="font-display text-lg font-bold text-white">Emergency Contacts</h3>
-            <ul className="mt-3 divide-y divide-white/10">
-              {EMERGENCY.map((c) => (
-                <li key={c.label} className="flex items-center justify-between py-3 text-sm">
-                  <span className="text-slate-300">{c.label}</span>
-                  <a href={`tel:${c.phone}`} className="flex items-center gap-1.5 font-semibold text-gold-500">
-                    <Phone className="h-4 w-4" /> {c.phone}
-                  </a>
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
       </div>

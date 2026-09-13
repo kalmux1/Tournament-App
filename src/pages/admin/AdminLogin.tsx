@@ -1,33 +1,39 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { Shield, Lock, User, ArrowLeft, AlertCircle } from "lucide-react"
-
-export const ADMIN_CREDENTIALS = {
-  username: "admin",
-  password: "admin123",
-}
+import { useAuth } from "@/context/AuthContext"
 
 export default function AdminLogin() {
-  const [username, setUsername] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
+  const { login, logout } = useAuth()
 
-  const handleLogin = (e: React.FormEvent) => {
+  const from = (location.state as any)?.from?.pathname
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setLoading(true)
 
-    setTimeout(() => {
-      if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
-        localStorage.setItem("imrt_admin_auth", "true")
-        navigate("/admin")
-      } else {
-        setError("Invalid username or password. Try admin / admin123")
-      }
+    const result = await login(email, password)
+    if (!result.success) {
+      setError(result.error || "Login failed.")
       setLoading(false)
-    }, 400)
+      return
+    }
+
+    if (result.role !== "admin") {
+      await logout()
+      setError("You do not have admin access.")
+      setLoading(false)
+      return
+    }
+
+    navigate(from || "/admin", { replace: true })
   }
 
   return (
@@ -63,18 +69,18 @@ export default function AdminLogin() {
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           <div>
             <label className="block text-xs font-medium uppercase tracking-wider text-slate-400">
-              Username
+              Email
             </label>
             <div className="relative mt-1">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                 <User className="h-4 w-4" />
               </div>
               <input
-                type="text"
+                type="email"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter admin username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter admin email"
                 className="w-full rounded-xl border border-white/10 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
               />
             </div>
@@ -93,7 +99,7 @@ export default function AdminLogin() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter admin password"
+                placeholder="Enter password"
                 className="w-full rounded-xl border border-white/10 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
               />
             </div>
@@ -107,10 +113,6 @@ export default function AdminLogin() {
             {loading ? "Authenticating..." : "Sign In to Dashboard"}
           </button>
         </form>
-
-        <div className="mt-6 rounded-xl border border-white/5 bg-slate-950/50 p-3 text-center text-xs text-slate-500">
-          Default credentials: <code className="text-gold-400">admin</code> / <code className="text-gold-400">admin123</code>
-        </div>
       </div>
     </div>
   )

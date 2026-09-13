@@ -33,7 +33,7 @@ export default function Footer() {
             <li>{TOURNAMENT.dates}</li>
             <li>{TOURNAMENT.venue}</li>
             <li>{TOURNAMENT.city}</li>
-            <li>organizers@imrt.edu</li>
+            <li>kal.mux.cyber@gmail.com</li>
           </ul>
         </div>
       </div>
