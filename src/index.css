@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(107, 23, 40, 0.35), transparent 45%),
+      radial-gradient(circle at 85% 0%, rgba(245, 158, 11, 0.12), transparent 40%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Oswald", sans-serif;
+    @apply uppercase tracking-tight;
+  }
+}
+
+@layer components {
+  .court-lines {
+    background-image:
+      linear-gradient(to right, rgba(245, 158, 11, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(245, 158, 11, 0.06) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+
+  .glass {
+    @apply bg-slate-900/60 backdrop-blur-xl border border-white/10;
+  }
+
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-gold-500 px-5 py-3 font-display text-sm font-semibold uppercase tracking-wide text-slate-950 transition hover:bg-gold-400 active:scale-95;
+  }
+
+  .btn-maroon {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-maroon-600 px-5 py-3 font-display text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-maroon-700 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-5 py-3 font-display text-sm font-semibold uppercase tracking-wide text-slate-100 transition hover:bg-white/10 active:scale-95;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-white/10 bg-slate-950/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-gold-500 focus:ring-1 focus:ring-gold-500;
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400;
+  }
+}
+
+/* Thin scrollbars */
+::-webkit-scrollbar { height: 6px; width: 6px; }
+::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.4); border-radius: 999px; }
+::-webkit-scrollbar-track { background: transparent; }
