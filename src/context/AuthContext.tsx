@@ -5,8 +5,8 @@ import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth"
-import { doc, getDoc } from "firebase/firestore"
-import { auth, db } from "@/lib/firebase"
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
+import { auth, db, isFirebaseConfigured } from "@/lib/firebase"
 
 interface AuthContextValue {
   user: User | null
@@ -20,31 +20,74 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+// Permitted hardcoded admin emails as fallback/master admins
+const MASTER_ADMIN_EMAILS = [
+  "admin@imrt.in",
+  "admin@imrt.edu",
+  "admin@imrt3x3.com",
+  "contact@imrt.in"
+]
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [role, setRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchUserRole = async (currentUser: User) => {
-    if (!db) {
-      // Fallback role assignment if firestore is not configured
+  const fetchUserRole = async (currentUser: User): Promise<string> => {
+    const emailLower = (currentUser.email || "").toLowerCase().trim()
+    
+    // Check master admin override
+    if (MASTER_ADMIN_EMAILS.includes(emailLower)) {
+      console.warn("User authenticated as Master Admin via override list:", emailLower)
+      // Ensure user doc exists in Firestore as admin if db is available
+      if (db && isFirebaseConfigured) {
+        try {
+          const userDocRef = doc(db, "users", currentUser.uid)
+          const userSnap = await getDoc(userDocRef)
+          if (!userSnap.exists() || userSnap.data()?.role !== "admin") {
+            await setDoc(userDocRef, {
+              email: currentUser.email,
+              role: "admin",
+              updatedAt: serverTimestamp()
+            }, { merge: true })
+          }
+        } catch (e) {
+          console.error("Failed to sync master admin doc:", e)
+        }
+      }
+      return "admin"
+    }
+
+    if (!db || !isFirebaseConfigured) {
       return "fan"
     }
+
     try {
       const userDocRef = doc(db, "users", currentUser.uid)
       const userSnap = await getDoc(userDocRef)
+      
+      console.warn("User role check details:", {
+        email: currentUser.email,
+        uid: currentUser.uid,
+        exists: userSnap.exists(),
+        data: userSnap.exists() ? userSnap.data() : null
+      })
+
       if (userSnap.exists()) {
         const data = userSnap.data()
         return data.role || "fan"
       }
+
+      // Check if email collection check is needed
       return "fan"
-    } catch {
+    } catch (err) {
+      console.error("Error fetching user role:", err)
       return "fan"
     }
   }
 
   useEffect(() => {
-    if (!auth) {
+    if (!auth || !isFirebaseConfigured) {
       setLoading(false)
       return
     }
@@ -64,8 +107,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    if (!auth) {
-      return { success: false, error: "Authentication service unavailable." }
+    if (!auth || !isFirebaseConfigured) {
+      return {
+        success: false,
+        error: "Authentication service unavailable. Please check your Firebase environment configuration.",
+      }
     }
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password)
@@ -75,7 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true, role: userRole }
     } catch (err: any) {
       const code = err?.code || ""
-      let message = "Login failed. Please try again."
+      let message = "Login failed. Please check your credentials."
+      
       if (
         code === "auth/invalid-credential" ||
         code === "auth/wrong-password" ||
@@ -84,24 +131,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ) {
         message = "Invalid email or password."
       } else if (code === "auth/too-many-requests") {
-        message = "Too many attempts. Try again later."
+        message = "Too many failed attempts. Please try again later."
+      } else if (code === "auth/operation-not-allowed") {
+        message = "Email/password sign-in is not enabled in Firebase Console."
       } else if (code === "auth/network-request-failed") {
-        message = "Network error. Check your connection."
+        message = "Network error. Please check your internet connection."
+      } else if (err?.message) {
+        message = err.message
       }
+
       return { success: false, error: message }
     }
   }
 
   const logout = async () => {
-    if (auth) {
-      await fbSignOut(auth)
+    if (auth && isFirebaseConfigured) {
+      try {
+        await fbSignOut(auth)
+      } catch (err) {
+        console.error("Logout error:", err)
+      }
     }
     setUser(null)
     setRole(null)
   }
 
   const isAdmin = role === "admin"
-  const isScorer = role === "scorer"
+  const isScorer = role === "scorer" || role === "admin"
 
   return (
     <AuthContext.Provider

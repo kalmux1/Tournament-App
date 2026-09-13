@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { Shield, Lock, User, ArrowLeft, AlertCircle } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
+import { isFirebaseConfigured } from "@/lib/firebase"
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("")
@@ -19,21 +20,39 @@ export default function AdminLogin() {
     setError("")
     setLoading(true)
 
-    const result = await login(email, password)
-    if (!result.success) {
-      setError(result.error || "Login failed.")
+    if (!isFirebaseConfigured) {
+      const err = new Error("Firebase environment variables are missing in .env. Please configure Firebase to sign in.")
+      console.error("Login attempt failed:", err)
+      setError(err.message)
       setLoading(false)
       return
     }
 
-    if (result.role !== "admin") {
-      await logout()
-      setError("You do not have admin access.")
-      setLoading(false)
-      return
-    }
+    try {
+      const result = await login(email, password)
+      if (!result.success) {
+        const err = new Error(result.error || "Login failed.")
+        console.error("Login attempt failed:", err)
+        setError(err.message)
+        setLoading(false)
+        return
+      }
 
-    navigate(from || "/admin", { replace: true })
+      if (result.role !== "admin") {
+        await logout()
+        const err = new Error("Access denied: You do not have administrator privileges.")
+        console.error("Login attempt failed:", err)
+        setError(err.message)
+        setLoading(false)
+        return
+      }
+
+      navigate(from || "/admin", { replace: true })
+    } catch (err: any) {
+      console.error("Login attempt failed:", err)
+      setError(err?.message || "An unexpected error occurred during login.")
+      setLoading(false)
+    }
   }
 
   return (
@@ -80,7 +99,7 @@ export default function AdminLogin() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter admin email"
+                placeholder="Enter admin email (e.g. admin@imrt.in)"
                 className="w-full rounded-xl border border-white/10 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
               />
             </div>

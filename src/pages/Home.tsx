@@ -32,7 +32,7 @@ export default function Home() {
               IMRT 3x3 <span className="text-gold-500">Basketball</span> 2026
             </h1>
             <p className="mt-5 max-w-xl text-lg text-slate-300">
-              Five days. One court. Non-stop half-court action under official FIBA 3x3 rules. Register your squad and
+              Three days. One court. Non-stop half-court action under official FIBA 3x3 rules. Register your squad and
               chase the crown.
             </p>
 
