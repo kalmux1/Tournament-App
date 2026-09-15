@@ -4,15 +4,17 @@ import { Shield, LogOut, Plus, Trash2, Edit2, Users, Search, X, Check, ArrowLeft
 import { mockTeams, mockMatches } from "@/lib/mockData"
 import type { Team, Category, Match, Player } from "@/lib/types"
 import DeleteConfirmModal from "@/components/common/DeleteConfirmModal"
+import { useAuth } from "@/context/AuthContext"
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const { logout } = useAuth()
   const [activeTab, setActiveTab] = useState<"teams" | "matches" | "settings">("teams")
 
-  // State for Teams
+  // State for Teams (Clean reset support: default to empty array or mockTeams if user wants)
   const [teams, setTeams] = useState<Team[]>(() => {
     const saved = localStorage.getItem("imrt_teams")
-    if (saved) {
+    if (saved !== null) {
       try { return JSON.parse(saved) } catch (e) { console.error(e) }
     }
     return mockTeams
@@ -21,7 +23,7 @@ export default function AdminDashboard() {
   // State for Fixtures / Matches
   const [matches, setMatches] = useState<Match[]>(() => {
     const saved = localStorage.getItem("imrt_matches")
-    if (saved) {
+    if (saved !== null) {
       try { return JSON.parse(saved) } catch (e) { console.error(e) }
     }
     return mockMatches
@@ -69,8 +71,8 @@ export default function AdminDashboard() {
   const [matchForm, setMatchForm] = useState({
     court: "Court 1 (Main Arena)",
     category: "Men's Open" as Category,
-    teamAId: teams[0]?.id || "",
-    teamBId: teams[1]?.id || "",
+    teamAId: "",
+    teamBId: "",
     scoreA: 0,
     scoreB: 0,
     status: "upcoming" as "upcoming" | "live" | "completed",
@@ -80,7 +82,7 @@ export default function AdminDashboard() {
   })
 
   useEffect(() => {
-    const isAuthed = localStorage.getItem("imrt_admin_auth")
+    const isAuthed = localStorage.getItem("imrt_admin_auth") || localStorage.getItem("imrt_auth_role") === "admin"
     if (!isAuthed) {
       navigate("/admin/login")
     }
@@ -94,9 +96,12 @@ export default function AdminDashboard() {
     localStorage.setItem("imrt_matches", JSON.stringify(matches))
   }, [matches])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout()
     localStorage.removeItem("imrt_admin_auth")
-    navigate("/admin/login")
+    localStorage.removeItem("imrt_auth_role")
+    localStorage.removeItem("imrt_auth_email")
+    navigate("/admin/login", { replace: true })
   }
 
   // Team Actions
@@ -124,16 +129,18 @@ export default function AdminDashboard() {
   const handleOpenEditTeam = (team: Team) => {
     setEditingTeamId(team.id)
     setTeamForm({
-      name: team.name,
-      code: team.code,
+      name: team.name || "",
+      code: team.code || "",
       color: team.color || "#6B1728",
-      category: team.category,
-      pool: team.pool,
-      captainName: team.captain.name,
-      captainEmail: team.captain.email,
-      captainPhone: team.captain.phone,
-      captainStudentId: team.captain.studentId,
-      roster: [...team.roster],
+      category: team.category || "Men's Open",
+      pool: team.pool || "A",
+      captainName: team.captain?.name || "",
+      captainEmail: team.captain?.email || "",
+      captainPhone: team.captain?.phone || "",
+      captainStudentId: team.captain?.studentId || "",
+      roster: team.roster && team.roster.length > 0 ? [...team.roster] : [
+        { name: "", jersey: 7, height: "6'0\"", role: "Guard", isSub: false }
+      ],
     })
     setIsTeamModalOpen(true)
   }
@@ -250,7 +257,7 @@ export default function AdminDashboard() {
   }
 
   const filteredTeams = teams.filter((t) => {
-    const matchesSearch = t.name.toLowerCase().includes(search.toLowerCase()) || t.code.toLowerCase().includes(search.toLowerCase())
+    const matchesSearch = (t.name || "").toLowerCase().includes(search.toLowerCase()) || (t.code || "").toLowerCase().includes(search.toLowerCase())
     const matchesCategory = selectedCategory === "All" || t.category === selectedCategory
     return matchesSearch && matchesCategory
   })
@@ -396,67 +403,73 @@ export default function AdminDashboard() {
                     {filteredTeams.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                          No teams found matching your search.
+                          No teams found. Click "Add New Team" or reset defaults in settings.
                         </td>
                       </tr>
                     ) : (
-                      filteredTeams.map((team) => (
-                        <tr key={team.id} className="transition hover:bg-white/[0.02]">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <span
-                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-display font-bold text-white shadow-md"
-                                style={{ backgroundColor: team.color || "#6B1728" }}
-                              >
-                                {team.code.substring(0, 3)}
-                              </span>
-                              <div>
-                                <span className="font-display font-bold text-white">{team.name}</span>
-                                <span className="block text-xs font-mono text-slate-400">{team.code}</span>
+                      filteredTeams.map((team) => {
+                        const teamCode = team.code || "IMRT";
+                        const teamAvatarText = teamCode.substring(0, Math.min(3, teamCode.length));
+                        return (
+                          <tr key={team.id} className="transition hover:bg-white/[0.02]">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-display font-bold text-white shadow-md"
+                                  style={{ backgroundColor: team.color || "#6B1728" }}
+                                >
+                                  {teamAvatarText}
+                                </span>
+                                <div>
+                                  <span className="font-display font-bold text-white">{team.name}</span>
+                                  <span className="block text-xs font-mono text-slate-400">{team.code}</span>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="inline-block rounded-md bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300">
-                              {team.category}
-                            </span>
-                            <span className="ml-2 inline-block rounded-md bg-gold-500/10 px-2 py-1 text-xs font-semibold text-gold-500">
-                              Pool {team.pool}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-slate-200">{team.captain.name}</div>
-                            <div className="text-xs text-slate-400">{team.captain.phone}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                              <Users className="h-3.5 w-3.5 text-gold-500" />
-                              <span>{team.roster.length} players</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 font-mono font-semibold text-slate-200">
-                            {team.wins} - {team.losses}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleOpenEditTeam(team)}
-                                className="rounded-lg border border-white/10 bg-slate-800/50 p-2 text-slate-300 transition hover:border-gold-500 hover:text-gold-500"
-                                title="Edit Team"
-                              >
-                                <Edit2 className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTeam(team.id, team.name)}
-                                className="rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20"
-                                title="Delete Team"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="inline-block rounded-md bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300">
+                                {team.category}
+                              </span>
+                              <span className="ml-2 inline-block rounded-md bg-gold-500/10 px-2 py-1 text-xs font-semibold text-gold-500">
+                                Pool {team.pool}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-medium text-slate-200">{team.captain?.name || "N/A"}</div>
+                              <div className="text-xs text-slate-400">{team.captain?.phone || ""}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                                <Users className="h-3.5 w-3.5 text-gold-500" />
+                                <span>{team.roster?.length || 0} players</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 font-mono font-semibold text-slate-200">
+                              {team.wins ?? 0} - {team.losses ?? 0}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditTeam(team)}
+                                  className="rounded-lg border border-white/10 bg-slate-800/50 p-2 text-slate-300 transition hover:border-gold-500 hover:text-gold-500 cursor-pointer"
+                                  title="Edit Team"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteTeam(team.id, team.name)}
+                                  className="rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20 cursor-pointer"
+                                  title="Delete Team"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
@@ -536,15 +549,17 @@ export default function AdminDashboard() {
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
+                                  type="button"
                                   onClick={() => handleOpenEditMatch(match)}
-                                  className="rounded-lg border border-white/10 bg-slate-800/50 p-2 text-slate-300 transition hover:border-gold-500 hover:text-gold-500"
+                                  className="rounded-lg border border-white/10 bg-slate-800/50 p-2 text-slate-300 transition hover:border-gold-500 hover:text-gold-500 cursor-pointer"
                                   title="Edit Match"
                                 >
                                   <Edit2 className="h-4 w-4" />
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleDeleteMatch(match.id)}
-                                  className="rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20"
+                                  className="rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20 cursor-pointer"
                                   title="Delete Match"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -570,25 +585,48 @@ export default function AdminDashboard() {
             <div className="space-y-4 border-t border-white/10 pt-6">
               <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950 p-4">
                 <div>
-                  <h4 className="font-display font-bold text-white">Reset Tournament Data</h4>
-                  <p className="text-xs text-slate-400">Restore default teams and mock fixture schedules</p>
+                  <h4 className="font-display font-bold text-white">Reset Tournament Data (Complete Clean)</h4>
+                  <p className="text-xs text-slate-400">Wipe all teams, fixtures, and scheduled matches completely clean with no garbage items</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     setDeleteModal({
                       isOpen: true,
-                      title: "Reset Tournament Data",
-                      message: "Are you sure you want to reset all data to default? All custom teams and fixtures will be reset.",
+                      title: "Reset & Wipe Tournament Data",
+                      message: "Are you sure you want to completely wipe all teams, fixtures, and scheduled matches? This will leave the tournament 100% clean.",
                       onConfirm: () => {
-                        localStorage.removeItem("imrt_teams")
-                        localStorage.removeItem("imrt_matches")
-                        window.location.reload()
+                        setTeams([])
+                        setMatches([])
+                        localStorage.setItem("imrt_teams", JSON.stringify([]))
+                        localStorage.setItem("imrt_matches", JSON.stringify([]))
+                        localStorage.removeItem("imrt_live_game")
+                        setDeleteModal((prev) => ({ ...prev, isOpen: false }))
                       },
                     })
                   }}
-                  className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/20"
+                  className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/20 cursor-pointer"
                 >
-                  Reset Data
+                  Wipe & Reset Clean
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950 p-4">
+                <div>
+                  <h4 className="font-display font-bold text-white">Restore Default Mock Data</h4>
+                  <p className="text-xs text-slate-400">Reload standard tournament sample teams and fixtures</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeams(mockTeams)
+                    setMatches(mockMatches)
+                    localStorage.setItem("imrt_teams", JSON.stringify(mockTeams))
+                    localStorage.setItem("imrt_matches", JSON.stringify(mockMatches))
+                  }}
+                  className="rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-xs font-semibold text-gold-400 hover:bg-gold-500/20 cursor-pointer"
+                >
+                  Load Sample Data
                 </button>
               </div>
 
@@ -598,6 +636,7 @@ export default function AdminDashboard() {
                   <p className="text-xs text-slate-400">Download JSON backup of all current teams and fixtures</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ teams, matches }, null, 2))
                     const downloadAnchor = document.createElement('a')
@@ -607,7 +646,7 @@ export default function AdminDashboard() {
                     downloadAnchor.click()
                     downloadAnchor.remove()
                   }}
-                  className="rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-xs font-semibold text-gold-400 hover:bg-gold-500/20"
+                  className="rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-xs font-semibold text-gold-400 hover:bg-gold-500/20 cursor-pointer"
                 >
                   Export JSON
                 </button>
@@ -626,8 +665,9 @@ export default function AdminDashboard() {
                 {editingTeamId ? "Edit Team & Roster" : "Add New Team"}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsTeamModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -738,7 +778,7 @@ export default function AdminDashboard() {
                       ...teamForm,
                       roster: [...teamForm.roster, { name: "", jersey: teamForm.roster.length + 1, height: "6'0\"", role: "Guard", isSub: false }]
                     })}
-                    className="rounded-lg bg-gold-500/10 px-3 py-1.5 text-xs font-medium text-gold-500 hover:bg-gold-500/20"
+                    className="rounded-lg bg-gold-500/10 px-3 py-1.5 text-xs font-medium text-gold-500 hover:bg-gold-500/20 cursor-pointer"
                   >
                     + Add Player
                   </button>
@@ -785,7 +825,7 @@ export default function AdminDashboard() {
                       <button
                         type="button"
                         onClick={() => setTeamForm({ ...teamForm, roster: teamForm.roster.filter((_, i) => i !== idx) })}
-                        className="rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                        className="rounded-lg p-2 text-red-400 hover:bg-red-500/10 cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -798,13 +838,13 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setIsTeamModalOpen(false)}
-                  className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-700"
+                  className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold-500 to-amber-600 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-gold-500/20 hover:brightness-110"
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold-500 to-amber-600 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-gold-500/20 hover:brightness-110 cursor-pointer"
                 >
                   <Check className="h-4 w-4" /> Save Team
                 </button>
@@ -823,8 +863,9 @@ export default function AdminDashboard() {
                 {editingMatchId ? "Edit Match Fixture" : "Schedule New Match"}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsMatchModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -850,6 +891,7 @@ export default function AdminDashboard() {
                     onChange={(e) => setMatchForm({ ...matchForm, teamAId: e.target.value })}
                     className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950 p-3 text-sm text-white"
                   >
+                    <option value="">Select Team A</option>
                     {teams.map((t) => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
@@ -862,6 +904,7 @@ export default function AdminDashboard() {
                     onChange={(e) => setMatchForm({ ...matchForm, teamBId: e.target.value })}
                     className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950 p-3 text-sm text-white"
                   >
+                    <option value="">Select Team B</option>
                     {teams.map((t) => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
@@ -906,13 +949,13 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setIsMatchModalOpen(false)}
-                  className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-700"
+                  className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold-500 to-amber-600 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-gold-500/20 hover:brightness-110"
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold-500 to-amber-600 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-gold-500/20 hover:brightness-110 cursor-pointer"
                 >
                   <Check className="h-4 w-4" /> Save Fixture
                 </button>
