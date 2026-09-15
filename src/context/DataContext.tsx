@@ -41,9 +41,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return saved ? JSON.parse(saved) : {
       name: TOURNAMENT.name,
       dates: TOURNAMENT.dates,
-      venue: TOURNAMENT.venue,
-      city: TOURNAMENT.city,
-      tipOff: TOURNAMENT.tipOff
+      venue: "IMRT Basketball Court Near Divine Bliss",
+      city: "Lucknow, India",
+      tipOff: TOURNAMENT.tipOff,
+      contactEmail: TOURNAMENT.contactEmail
     }
   })
 
@@ -141,6 +142,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
 export function useData() {
   const context = useContext(DataContext)
-  if (!context) throw new Error("useData must be used within a DataProvider")
+  if (!context) {
+    throw new Error("useData must be used within a DataProvider")
+  }
   return context
 }

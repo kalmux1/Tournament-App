@@ -1,4 +1,6 @@
-export interface TeamMember {
+export type Category = "Men's Open" | "Women's Open" | "Under-19 Boys"
+
+export interface Player {
   name: string
   jersey: number
   height: string
@@ -18,10 +20,10 @@ export interface Team {
   code: string
   name: string
   color: string
-  category: "Men's Open" | "Women's Open" | "U-19 Boys" | "U-19 Girls"
+  category: Category
   pool: string
   captain: Captain
-  roster: TeamMember[]
+  roster: Player[]
   wins: number
   losses: number
   pointsFor: number
@@ -29,21 +31,21 @@ export interface Team {
   approved: boolean
 }
 
-export type MatchStatus = "upcoming" | "live" | "completed" | "finished"
-
 export interface Match {
   id: string
   court: string
-  category: string
+  category: Category
   teamAId: string
   teamBId: string
   scoreA: number
   scoreB: number
-  status: MatchStatus
+  status: "upcoming" | "live" | "finished"
   time: string
   date: string
-  round: string
-  venue: string
+  stage?: string
+  pool?: string
+  winnerId?: string
+  venue?: string
 }
 
 export interface Scorer {
@@ -61,11 +63,5 @@ export interface TournamentSettings {
   venue: string
   city: string
   tipOff: string
-}
-
-export interface ScorerStat {
-  teamId: string
-  playerName: string
-  points: number
-  games: number
+  contactEmail: string
 }

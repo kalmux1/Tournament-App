@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Award, LogOut, Play, Pause, RotateCcw, Plus, Minus, ArrowLeft, Shield, Flame, Activity, CheckCircle2, RefreshCw } from "lucide-react"
+import { Award, LogOut, Play, Pause, RotateCcw, Plus, Minus, ArrowLeft, Shield, Flame, Activity, CheckCircle2, RefreshCw, UserCheck, UserX, AlertTriangle, X } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { useData } from "@/context/DataContext"
 import type { Player } from "@/lib/types"
@@ -65,7 +65,7 @@ export default function ScorerDashboard() {
   const { teams } = useData()
 
   const [gameState, setGameState] = useState<LiveGameState>(() => {
-    const saved = localStorage.getItem("imrt_live_game")
+    const saved = localStorage.getItem("imrt_live_game_v2")
     if (saved) {
       try { return JSON.parse(saved) } catch (e) { console.error(e) }
     }
@@ -73,10 +73,11 @@ export default function ScorerDashboard() {
   })
 
   const [notification, setNotification] = useState<string | null>(null)
+  const [showResetModal, setShowResetModal] = useState(false)
 
   const showNotice = (msg: string) => {
     setNotification(msg)
-    setTimeout(() => setNotification(null), 3000)
+    setTimeout(() => setNotification(null), 2500)
   }
 
   useEffect(() => {
@@ -87,9 +88,10 @@ export default function ScorerDashboard() {
   }, [navigate])
 
   useEffect(() => {
-    localStorage.setItem("imrt_live_game", JSON.stringify(gameState))
+    localStorage.setItem("imrt_live_game_v2", JSON.stringify(gameState))
   }, [gameState])
 
+  // Game clock timer
   useEffect(() => {
     let interval: any = null
     if (gameState.isGameRunning && gameState.gameTime > 0) {
@@ -104,6 +106,7 @@ export default function ScorerDashboard() {
     return () => clearInterval(interval)
   }, [gameState.isGameRunning, gameState.gameTime])
 
+  // Shot clock timer
   useEffect(() => {
     let interval: any = null
     if (gameState.isShotRunning && gameState.shotTime > 0) {
@@ -147,7 +150,7 @@ export default function ScorerDashboard() {
       const scoreKey = team === "A" ? "scoreA" : "scoreB"
       const teamName = team === "A" ? prev.teamAName : prev.teamBName
       const newScore = Math.max(0, prev[scoreKey] + delta)
-      showNotice(`${teamName} score adjusted by ${delta > 0 ? `+${delta}` : delta} (Total: ${newScore})`)
+      showNotice(`${teamName} score updated to ${newScore}`)
       return {
         ...prev,
         [scoreKey]: newScore,
@@ -159,16 +162,20 @@ export default function ScorerDashboard() {
     setGameState((prev) => {
       const rosterKey = team === "A" ? "rosterA" : "rosterB"
       const scoreKey = team === "A" ? "scoreA" : "scoreB"
-      const updatedRoster = [...prev[rosterKey]]
+      
+      const updatedRoster = prev[rosterKey].map((p, idx) => {
+        if (idx === playerIndex) {
+          const newPoints = Math.max(0, p.points + delta)
+          return { ...p, points: newPoints }
+        }
+        return { ...p }
+      })
+
       const player = updatedRoster[playerIndex]
-
-      const newPlayerPoints = Math.max(0, player.points + delta)
-      const pointDifference = newPlayerPoints - player.points
-      player.points = newPlayerPoints
-
+      const pointDifference = delta
       const newTeamScore = Math.max(0, prev[scoreKey] + pointDifference)
 
-      showNotice(`${player.name} (${delta > 0 ? `+${delta}` : delta} pt) updated`)
+      showNotice(`${player.name}: ${delta > 0 ? `+${delta}` : delta} pt`)
 
       return {
         ...prev,
@@ -182,11 +189,16 @@ export default function ScorerDashboard() {
     setGameState((prev) => {
       const rosterKey = team === "A" ? "rosterA" : "rosterB"
       const foulKey = team === "A" ? "foulsA" : "foulsB"
-      const updatedRoster = [...prev[rosterKey]]
-      const player = updatedRoster[playerIndex]
-      const newFouls = Math.max(0, Math.min(5, player.fouls + delta))
-      const diff = newFouls - player.fouls
-      player.fouls = newFouls
+      
+      const updatedRoster = prev[rosterKey].map((p, idx) => {
+        if (idx === playerIndex) {
+          const newFouls = Math.max(0, Math.min(5, p.fouls + delta))
+          return { ...p, fouls: newFouls }
+        }
+        return { ...p }
+      })
+
+      const diff = delta
 
       return {
         ...prev,
@@ -199,8 +211,14 @@ export default function ScorerDashboard() {
   const toggleSub = (team: "A" | "B", playerIndex: number) => {
     setGameState((prev) => {
       const rosterKey = team === "A" ? "rosterA" : "rosterB"
-      const updatedRoster = [...prev[rosterKey]]
-      updatedRoster[playerIndex].subbedOut = !updatedRoster[playerIndex].subbedOut
+      const updatedRoster = prev[rosterKey].map((p, idx) => {
+        if (idx === playerIndex) {
+          const nextSubState = !p.subbedOut
+          showNotice(`${p.name} is now ${nextSubState ? "on Bench" : "On Court"}`)
+          return { ...p, subbedOut: nextSubState }
+        }
+        return { ...p }
+      })
       return { ...prev, [rosterKey]: updatedRoster }
     })
   }
@@ -243,15 +261,14 @@ export default function ScorerDashboard() {
     showNotice(`Loaded team: ${teamName}`)
   }
 
-  const resetEntireGame = () => {
-    if (window.confirm("Are you sure you want to reset the entire scoreboard? All scores and times will be reset.")) {
-      setGameState(DEFAULT_STATE)
-      showNotice("Scoreboard reset to default state.")
-    }
+  const confirmResetEntireGame = () => {
+    setGameState(DEFAULT_STATE)
+    setShowResetModal(false)
+    showNotice("Scoreboard reset to default state.")
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-28">
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-28 selection:bg-gold-500 selection:text-slate-950">
       {notification && (
         <div className="fixed top-20 right-4 z-50 flex items-center gap-2 rounded-2xl border border-gold-500/40 bg-slate-900/95 px-4 py-3 text-xs font-bold text-gold-400 shadow-2xl backdrop-blur-xl animate-fade-in">
           <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
@@ -259,6 +276,46 @@ export default function ScorerDashboard() {
         </div>
       )}
 
+      {/* Custom Reset Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="relative w-full max-w-md rounded-3xl border border-red-500/30 bg-slate-900 p-6 sm:p-8 shadow-2xl space-y-6">
+            <button
+              onClick={() => setShowResetModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-4">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/20 border border-red-500/30 text-red-400">
+                <AlertTriangle className="h-6 w-6" />
+              </span>
+              <div>
+                <h3 className="font-display text-xl font-bold text-white">Reset Match Scoreboard?</h3>
+                <p className="text-xs text-slate-400">This action will clear all scores, player stats, and active game timers.</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmResetEntireGame}
+                className="rounded-xl bg-red-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-500 transition shadow-lg shadow-red-600/30 cursor-pointer"
+              >
+                Yes, Reset All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <header className="border-b border-white/10 bg-slate-900/90 backdrop-blur-xl sticky top-0 z-40">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -277,7 +334,7 @@ export default function ScorerDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={resetEntireGame}
+              onClick={() => setShowResetModal(true)}
               className="hidden sm:flex items-center gap-1.5 rounded-xl border border-white/10 bg-slate-800/60 px-3.5 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white cursor-pointer"
               title="Reset match state"
             >
@@ -301,14 +358,15 @@ export default function ScorerDashboard() {
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-8">
         
+        {/* Scoreboard Banner */}
         <div className="relative rounded-3xl border border-gold-500/30 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-950 p-6 sm:p-10 shadow-2xl backdrop-blur-md overflow-hidden">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gold-500/10 via-transparent to-transparent pointer-events-none" />
           
           <div className="relative grid items-center gap-8 md:grid-cols-7 text-center">
             
-            <div className="md:col-span-3 space-y-4">
+            <div className="md:col-span-3 space-y-3">
               <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team A Squad</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team A</span>
                 <select
                   value={gameState.teamAName}
                   onChange={(e) => handleSelectTeam("A", e.target.value)}
@@ -324,7 +382,7 @@ export default function ScorerDashboard() {
               <h2 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight">{gameState.teamAName}</h2>
               
               <div className="flex items-center justify-center gap-2 pt-1">
-                <span className="text-xs text-slate-400 font-medium">Direct Correction:</span>
+                <span className="text-xs text-slate-400 font-medium">Direct Score:</span>
                 <button
                   type="button"
                   onClick={() => adjustTeamScoreDirect("A", -1)}
@@ -357,9 +415,9 @@ export default function ScorerDashboard() {
               </div>
             </div>
 
-            <div className="md:col-span-3 space-y-4">
+            <div className="md:col-span-3 space-y-3">
               <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team B Squad</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team B</span>
                 <select
                   value={gameState.teamBName}
                   onChange={(e) => handleSelectTeam("B", e.target.value)}
@@ -375,7 +433,7 @@ export default function ScorerDashboard() {
               <h2 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight">{gameState.teamBName}</h2>
 
               <div className="flex items-center justify-center gap-2 pt-1">
-                <span className="text-xs text-slate-400 font-medium">Direct Correction:</span>
+                <span className="text-xs text-slate-400 font-medium">Direct Score:</span>
                 <button
                   type="button"
                   onClick={() => adjustTeamScoreDirect("B", -1)}
@@ -403,7 +461,9 @@ export default function ScorerDashboard() {
           </div>
         </div>
 
+        {/* Timers & Controls */}
         <div className="grid gap-6 md:grid-cols-3">
+          {/* Game Clock */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-md text-center flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -413,18 +473,18 @@ export default function ScorerDashboard() {
                 {formatTime(gameState.gameTime)}
               </div>
             </div>
-            <div className="flex items-center justify-center gap-2.5 pt-4 border-t border-white/5">
+            <div className="flex items-center justify-center gap-2 pt-4 border-t border-white/5">
               <button
                 type="button"
                 onClick={toggleGameClock}
-                className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition shadow-lg cursor-pointer ${
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition shadow-lg cursor-pointer ${
                   gameState.isGameRunning
                     ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
                     : "bg-gold-500 text-slate-950 hover:brightness-110 shadow-gold-500/20"
                 }`}
               >
                 {gameState.isGameRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                {gameState.isGameRunning ? "PAUSE GAME" : "START GAME"}
+                {gameState.isGameRunning ? "PAUSE" : "START"}
               </button>
               <button
                 type="button"
@@ -445,9 +505,10 @@ export default function ScorerDashboard() {
             </div>
           </div>
 
+          {/* Shot Clock */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-md text-center flex flex-col justify-between">
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">FIBA Shot Clock</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">FIBA 3x3 Shot Clock</span>
               <div className={`my-3 font-mono text-5xl font-black tracking-wider ${gameState.shotTime <= 3 ? "text-red-400 animate-pulse" : "text-white"}`}>
                 {gameState.shotTime}s
               </div>
@@ -456,7 +517,7 @@ export default function ScorerDashboard() {
               <button
                 type="button"
                 onClick={toggleShotClock}
-                className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
                   gameState.isShotRunning
                     ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
                     : "bg-gold-500 text-slate-950 hover:brightness-110"
@@ -468,7 +529,7 @@ export default function ScorerDashboard() {
               <button
                 type="button"
                 onClick={() => resetShotClock(12)}
-                className={`rounded-xl px-3 py-2 text-xs font-mono font-bold transition cursor-pointer ${
+                className={`rounded-xl px-2.5 py-2 text-xs font-mono font-bold transition cursor-pointer ${
                   gameState.shotClockPreset === 12 ? "bg-gold-500 text-slate-950" : "bg-slate-800 text-slate-300 border border-white/10"
                 }`}
               >
@@ -477,7 +538,7 @@ export default function ScorerDashboard() {
               <button
                 type="button"
                 onClick={() => resetShotClock(14)}
-                className={`rounded-xl px-3 py-2 text-xs font-mono font-bold transition cursor-pointer ${
+                className={`rounded-xl px-2.5 py-2 text-xs font-mono font-bold transition cursor-pointer ${
                   gameState.shotClockPreset === 14 ? "bg-gold-500 text-slate-950" : "bg-slate-800 text-slate-300 border border-white/10"
                 }`}
               >
@@ -486,7 +547,7 @@ export default function ScorerDashboard() {
               <button
                 type="button"
                 onClick={() => resetShotClock(21)}
-                className={`rounded-xl px-3 py-2 text-xs font-mono font-bold transition cursor-pointer ${
+                className={`rounded-xl px-2.5 py-2 text-xs font-mono font-bold transition cursor-pointer ${
                   gameState.shotClockPreset === 21 ? "bg-gold-500 text-slate-950" : "bg-slate-800 text-slate-300 border border-white/10"
                 }`}
               >
@@ -495,6 +556,7 @@ export default function ScorerDashboard() {
             </div>
           </div>
 
+          {/* Period Indicator */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-md flex flex-col justify-between">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Match Quarter / Period</span>
@@ -509,24 +571,26 @@ export default function ScorerDashboard() {
                   }}
                   className="rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-xs font-bold text-gold-400 hover:bg-gold-500/20 transition cursor-pointer"
                 >
-                  Next Quarter →
+                  Next Period →
                 </button>
               </div>
             </div>
             <div className="flex items-center justify-between text-xs text-slate-400 border-t border-white/5 pt-3">
               <span className="font-semibold text-slate-300">FIBA 3x3 Rules</span>
-              <span className="text-gold-400 font-bold">First to 21 points wins</span>
+              <span className="text-gold-400 font-bold">First to 21 points</span>
             </div>
           </div>
         </div>
 
+        {/* Player Roster Section */}
         <div className="grid gap-8 lg:grid-cols-2">
           
+          {/* Team A Roster */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
                 <h3 className="font-display text-xl font-bold text-white">{gameState.teamAName}</h3>
-                <p className="text-xs text-slate-400">Assign points or use [-] to depreciate wrong scores</p>
+                <p className="text-xs text-slate-400">Manage player points, fouls & substitutions</p>
               </div>
               <span className="rounded-2xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 font-mono text-2xl font-black text-gold-500 shadow-inner">
                 {gameState.scoreA} pts
@@ -537,8 +601,10 @@ export default function ScorerDashboard() {
               {gameState.rosterA.map((player, idx) => (
                 <div
                   key={idx}
-                  className={`rounded-2xl border p-4 sm:p-5 transition ${
-                    player.subbedOut ? "border-white/5 bg-slate-950/40 opacity-60" : "border-white/10 bg-slate-950/90 shadow-xl"
+                  className={`rounded-2xl border p-4 sm:p-5 transition duration-200 ${
+                    player.subbedOut 
+                      ? "border-amber-500/20 bg-amber-950/10 opacity-75" 
+                      : "border-emerald-500/30 bg-slate-950/90 shadow-xl ring-1 ring-emerald-500/10"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -547,7 +613,12 @@ export default function ScorerDashboard() {
                         #{player.jersey}
                       </span>
                       <div>
-                        <div className="font-display font-bold text-base text-white">{player.name}</div>
+                        <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                          {player.name}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${player.subbedOut ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"}`}>
+                            {player.subbedOut ? "Bench" : "On Court"}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
                           <span className="text-slate-300 font-medium">{player.role}</span>
                           <span>•</span>
@@ -555,19 +626,24 @@ export default function ScorerDashboard() {
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Reliable Sub Button */}
                     <button
                       type="button"
                       onClick={() => toggleSub("A", idx)}
-                      className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                        player.subbedOut ? "bg-slate-800 text-slate-400" : "bg-gold-500/20 text-gold-400 border border-gold-500/30"
+                      className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow cursor-pointer ${
+                        player.subbedOut 
+                          ? "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-white/10" 
+                          : "bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30"
                       }`}
                     >
-                      {player.subbedOut ? "Bench" : "On Court"}
+                      {player.subbedOut ? <UserCheck className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
+                      {player.subbedOut ? "Sub In" : "Send to Bench"}
                     </button>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">Points:</span>
                       
                       <button
@@ -617,7 +693,8 @@ export default function ScorerDashboard() {
                           <button
                             type="button"
                             onClick={() => adjustPlayerFouls("A", idx, -1)}
-                            className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                            disabled={player.fouls <= 0}
+                            className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
                           >
                             <Minus className="h-3 w-3" />
                           </button>
@@ -638,11 +715,12 @@ export default function ScorerDashboard() {
             </div>
           </div>
 
+          {/* Team B Roster */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
                 <h3 className="font-display text-xl font-bold text-white">{gameState.teamBName}</h3>
-                <p className="text-xs text-slate-400">Assign points or use [-] to depreciate wrong scores</p>
+                <p className="text-xs text-slate-400">Manage player points, fouls & substitutions</p>
               </div>
               <span className="rounded-2xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 font-mono text-2xl font-black text-gold-500 shadow-inner">
                 {gameState.scoreB} pts
@@ -653,8 +731,10 @@ export default function ScorerDashboard() {
               {gameState.rosterB.map((player, idx) => (
                 <div
                   key={idx}
-                  className={`rounded-2xl border p-4 sm:p-5 transition ${
-                    player.subbedOut ? "border-white/5 bg-slate-950/40 opacity-60" : "border-white/10 bg-slate-950/90 shadow-xl"
+                  className={`rounded-2xl border p-4 sm:p-5 transition duration-200 ${
+                    player.subbedOut 
+                      ? "border-amber-500/20 bg-amber-950/10 opacity-75" 
+                      : "border-emerald-500/30 bg-slate-950/90 shadow-xl ring-1 ring-emerald-500/10"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -663,7 +743,12 @@ export default function ScorerDashboard() {
                         #{player.jersey}
                       </span>
                       <div>
-                        <div className="font-display font-bold text-base text-white">{player.name}</div>
+                        <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                          {player.name}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${player.subbedOut ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"}`}>
+                            {player.subbedOut ? "Bench" : "On Court"}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
                           <span className="text-slate-300 font-medium">{player.role}</span>
                           <span>•</span>
@@ -671,19 +756,24 @@ export default function ScorerDashboard() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Reliable Sub Button */}
                     <button
                       type="button"
                       onClick={() => toggleSub("B", idx)}
-                      className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                        player.subbedOut ? "bg-slate-800 text-slate-400" : "bg-gold-500/20 text-gold-400 border border-gold-500/30"
+                      className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow cursor-pointer ${
+                        player.subbedOut 
+                          ? "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-white/10" 
+                          : "bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30"
                       }`}
                     >
-                      {player.subbedOut ? "Bench" : "On Court"}
+                      {player.subbedOut ? <UserCheck className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
+                      {player.subbedOut ? "Sub In" : "Send to Bench"}
                     </button>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">Points:</span>
                       
                       <button
@@ -733,7 +823,8 @@ export default function ScorerDashboard() {
                           <button
                             type="button"
                             onClick={() => adjustPlayerFouls("B", idx, -1)}
-                            className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                            disabled={player.fouls <= 0}
+                            className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
                           >
                             <Minus className="h-3 w-3" />
                           </button>

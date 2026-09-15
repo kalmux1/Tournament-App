@@ -168,11 +168,11 @@ export const mockMatches: Match[] = [
     teamBId: "team_2",
     scoreA: 21,
     scoreB: 18,
-    status: "completed",
+    status: "completed" as any,
     time: "09:30 AM",
     date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Basketball Court Near Divine Bliss"
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
   },
   {
     id: "m_2",
@@ -182,11 +182,11 @@ export const mockMatches: Match[] = [
     teamBId: "team_4",
     scoreA: 21,
     scoreB: 14,
-    status: "completed",
+    status: "completed" as any,
     time: "10:15 AM",
     date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Basketball Court Near Divine Bliss"
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
   },
   {
     id: "m_3",
@@ -196,11 +196,11 @@ export const mockMatches: Match[] = [
     teamBId: "team_6",
     scoreA: 19,
     scoreB: 11,
-    status: "completed",
+    status: "completed" as any,
     time: "11:00 AM",
     date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Basketball Court Near Divine Bliss"
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
   },
   {
     id: "m_4",
@@ -214,7 +214,7 @@ export const mockMatches: Match[] = [
     time: "11:45 AM",
     date: "2026-09-27",
     round: "Quarterfinals",
-    venue: "IMRT Basketball Court Near Divine Bliss"
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
   },
   {
     id: "m_5",
@@ -228,7 +228,7 @@ export const mockMatches: Match[] = [
     time: "12:30 PM",
     date: "2026-09-28",
     round: "Semifinals",
-    venue: "IMRT Basketball Court Near Divine Bliss"
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
   }
 ]
 

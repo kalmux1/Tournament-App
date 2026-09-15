@@ -1,7 +1,10 @@
 import { useData } from "@/context/DataContext"
+import { mockMatches, mockTeams } from "@/lib/mockData"
 
 export default function Ticker() {
-  const { matches, getTeam } = useData()
+  const context = useData()
+  const matches = context?.matches || mockMatches
+  const getTeam = context?.getTeam || ((id: string) => mockTeams.find(t => t.id === id))
 
   const safeMatches = matches && Array.isArray(matches) ? matches : []
 
@@ -26,7 +29,7 @@ export default function Ticker() {
     items.push({
       id: "default-1",
       status: "upcoming",
-      text: "IMRT 3x3 Championship 2026 • 3 October – 8 October",
+      text: "IMRT 3x3 Championship 2026 • September 27 – October 3",
       label: "INFO",
     })
   }
