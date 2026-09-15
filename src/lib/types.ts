@@ -5,17 +5,20 @@ export interface Player {
   jersey: number
   height: string
   role: "Guard" | "Forward" | "Center" | "Wing"
-  isSub?: boolean
+  isSub: boolean
+  points?: number
+  fouls?: number
+  subbedOut?: boolean
 }
 
 export interface Team {
   id: string
   code: string
   name: string
+  logo?: string
   color: string
   category: Category
   pool: string
-  logo?: string
   captain: {
     name: string
     email: string
@@ -28,6 +31,7 @@ export interface Team {
   pointsFor: number
   pointsAgainst: number
   approved: boolean
+  createdAt?: any
 }
 
 export interface Match {
@@ -46,8 +50,9 @@ export interface Match {
 
 export interface Scorer {
   id: string
-  playerName: string
-  teamId: string
-  points: number
-  games: number
+  name: string
+  email: string
+  phone: string
+  assignedCourt: string
+  active: boolean
 }

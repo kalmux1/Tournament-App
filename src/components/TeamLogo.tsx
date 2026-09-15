@@ -8,6 +8,7 @@ const SIZES = {
 }
 
 function initials(name: string) {
+  if (!name) return "??"
   return name
     .split(" ")
     .map((w) => w[0])
@@ -20,25 +21,37 @@ export default function TeamLogo({
   team,
   size = "md",
 }: {
-  team: Pick<Team, "name" | "logo" | "color">
+  team?: Pick<Team, "name" | "logo" | "color"> | null
   size?: keyof typeof SIZES
 }) {
+  if (!team) {
+    return (
+      <span
+        aria-hidden="true"
+        className={`${SIZES[size]} flex shrink-0 items-center justify-center rounded-full font-display font-bold text-white ring-2 ring-white/10 bg-slate-700`}
+      >
+        ?
+      </span>
+    )
+  }
+
   if (team.logo) {
     return (
       <img
         src={team.logo || "/placeholder.svg"}
-        alt={`${team.name} logo`}
+        alt={`${team.name || "Team"} logo`}
         className={`${SIZES[size]} shrink-0 rounded-full object-cover ring-2 ring-white/10`}
       />
     )
   }
+  
   return (
     <span
       aria-hidden="true"
       className={`${SIZES[size]} flex shrink-0 items-center justify-center rounded-full font-display font-bold text-white ring-2 ring-white/10`}
-      style={{ background: `linear-gradient(135deg, ${team.color}, rgba(15,23,42,0.9))` }}
+      style={{ background: `linear-gradient(135deg, ${team.color || '#3b82f6'}, rgba(15,23,42,0.9))` }}
     >
-      {initials(team.name)}
+      {initials(team.name || "Team")}
     </span>
   )
 }

@@ -1,38 +1,20 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Shield, LogOut, Plus, Trash2, Edit2, Users, Search, X, Check, ArrowLeft, Calendar, Settings } from "lucide-react"
-import { mockTeams, mockMatches } from "@/lib/mockData"
 import type { Team, Category, Match, Player } from "@/lib/types"
 import DeleteConfirmModal from "@/components/common/DeleteConfirmModal"
 import { useAuth } from "@/context/AuthContext"
+import { useData } from "@/context/DataContext"
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { logout } = useAuth()
+  const { teams, matches, addTeam, updateTeam, deleteTeam, addMatch, updateMatch, deleteMatch, resetAllData, restoreSampleData } = useData()
   const [activeTab, setActiveTab] = useState<"teams" | "matches" | "settings">("teams")
-
-  // State for Teams (Clean reset support: default to empty array or mockTeams if user wants)
-  const [teams, setTeams] = useState<Team[]>(() => {
-    const saved = localStorage.getItem("imrt_teams")
-    if (saved !== null) {
-      try { return JSON.parse(saved) } catch (e) { console.error(e) }
-    }
-    return mockTeams
-  })
-
-  // State for Fixtures / Matches
-  const [matches, setMatches] = useState<Match[]>(() => {
-    const saved = localStorage.getItem("imrt_matches")
-    if (saved !== null) {
-      try { return JSON.parse(saved) } catch (e) { console.error(e) }
-    }
-    return mockMatches
-  })
 
   const [search, setSearch] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("All")
   
-  // Custom Delete Modal State
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
     title: string
@@ -45,7 +27,6 @@ export default function AdminDashboard() {
     onConfirm: () => {},
   })
   
-  // Team Modal state
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false)
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
   const [teamForm, setTeamForm] = useState({
@@ -65,7 +46,6 @@ export default function AdminDashboard() {
     ] as Player[],
   })
 
-  // Match Modal state
   const [isMatchModalOpen, setIsMatchModalOpen] = useState(false)
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null)
   const [matchForm, setMatchForm] = useState({
@@ -88,14 +68,6 @@ export default function AdminDashboard() {
     }
   }, [navigate])
 
-  useEffect(() => {
-    localStorage.setItem("imrt_teams", JSON.stringify(teams))
-  }, [teams])
-
-  useEffect(() => {
-    localStorage.setItem("imrt_matches", JSON.stringify(matches))
-  }, [matches])
-
   const handleLogout = async () => {
     await logout()
     localStorage.removeItem("imrt_admin_auth")
@@ -104,7 +76,6 @@ export default function AdminDashboard() {
     navigate("/admin/login", { replace: true })
   }
 
-  // Team Actions
   const handleOpenAddTeam = () => {
     setEditingTeamId(null)
     setTeamForm({
@@ -150,14 +121,14 @@ export default function AdminDashboard() {
       isOpen: true,
       title: "Delete Team",
       message: `Are you sure you want to delete "${name}"? This action cannot be undone and will remove all associated player rosters.`,
-      onConfirm: () => {
-        setTeams(teams.filter((t) => t.id !== id))
+      onConfirm: async () => {
+        await deleteTeam(id)
         setDeleteModal((prev) => ({ ...prev, isOpen: false }))
       },
     })
   }
 
-  const handleSaveTeam = (e: React.FormEvent) => {
+  const handleSaveTeam = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!teamForm.name.trim()) return
 
@@ -183,14 +154,13 @@ export default function AdminDashboard() {
     }
 
     if (editingTeamId) {
-      setTeams(teams.map((t) => (t.id === editingTeamId ? { ...t, ...newTeamObj } : t)))
+      await updateTeam(editingTeamId, newTeamObj)
     } else {
-      setTeams([newTeamObj, ...teams])
+      await addTeam(newTeamObj)
     }
     setIsTeamModalOpen(false)
   }
 
-  // Match Actions
   const handleOpenAddMatch = () => {
     setEditingMatchId(null)
     setMatchForm({
@@ -234,14 +204,14 @@ export default function AdminDashboard() {
       isOpen: true,
       title: "Delete Match Fixture",
       message: `Are you sure you want to delete ${matchName}? This will remove it from tournament schedules.`,
-      onConfirm: () => {
-        setMatches(matches.filter((m) => m.id !== id))
+      onConfirm: async () => {
+        await deleteMatch(id)
         setDeleteModal((prev) => ({ ...prev, isOpen: false }))
       },
     })
   }
 
-  const handleSaveMatch = (e: React.FormEvent) => {
+  const handleSaveMatch = async (e: React.FormEvent) => {
     e.preventDefault()
     const newMatchObj: Match = {
       id: editingMatchId || `m_${Date.now()}`,
@@ -249,9 +219,9 @@ export default function AdminDashboard() {
     }
 
     if (editingMatchId) {
-      setMatches(matches.map((m) => (m.id === editingMatchId ? newMatchObj : m)))
+      await updateMatch(editingMatchId, newMatchObj)
     } else {
-      setMatches([newMatchObj, ...matches])
+      await addMatch(newMatchObj)
     }
     setIsMatchModalOpen(false)
   }
@@ -272,7 +242,6 @@ export default function AdminDashboard() {
         onClose={() => setDeleteModal((prev) => ({ ...prev, isOpen: false }))}
       />
 
-      {/* Top Header */}
       <header className="border-b border-white/10 bg-slate-900/50 backdrop-blur-md sticky top-0 z-30">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -301,7 +270,6 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
       <div className="border-b border-white/10 bg-slate-900/30">
         <div className="mx-auto flex max-w-7xl gap-2 px-4 sm:px-6">
           <button
@@ -337,7 +305,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {activeTab === "teams" && (
           <div className="space-y-6">
@@ -354,7 +321,6 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            {/* Filters & Search */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative flex-1 max-w-md">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -385,7 +351,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Teams Table */}
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 shadow-xl backdrop-blur-md">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -403,13 +368,13 @@ export default function AdminDashboard() {
                     {filteredTeams.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                          No teams found. Click "Add New Team" or reset defaults in settings.
+                          No teams found. Click "Add New Team" or restore defaults in settings.
                         </td>
                       </tr>
                     ) : (
                       filteredTeams.map((team) => {
-                        const teamCode = team.code || "IMRT";
-                        const teamAvatarText = teamCode.substring(0, Math.min(3, teamCode.length));
+                        const teamCode = team.code || "IMRT"
+                        const teamAvatarText = teamCode.substring(0, Math.min(3, teamCode.length))
                         return (
                           <tr key={team.id} className="transition hover:bg-white/[0.02]">
                             <td className="px-6 py-4">
@@ -596,11 +561,7 @@ export default function AdminDashboard() {
                       title: "Reset & Wipe Tournament Data",
                       message: "Are you sure you want to completely wipe all teams, fixtures, and scheduled matches? This will leave the tournament 100% clean.",
                       onConfirm: () => {
-                        setTeams([])
-                        setMatches([])
-                        localStorage.setItem("imrt_teams", JSON.stringify([]))
-                        localStorage.setItem("imrt_matches", JSON.stringify([]))
-                        localStorage.removeItem("imrt_live_game")
+                        resetAllData()
                         setDeleteModal((prev) => ({ ...prev, isOpen: false }))
                       },
                     })
@@ -619,10 +580,7 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => {
-                    setTeams(mockTeams)
-                    setMatches(mockMatches)
-                    localStorage.setItem("imrt_teams", JSON.stringify(mockTeams))
-                    localStorage.setItem("imrt_matches", JSON.stringify(mockMatches))
+                    restoreSampleData()
                   }}
                   className="rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-xs font-semibold text-gold-400 hover:bg-gold-500/20 cursor-pointer"
                 >
@@ -656,7 +614,6 @@ export default function AdminDashboard() {
         )}
       </main>
 
-      {/* Team Add/Edit Modal */}
       {isTeamModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl my-8">
@@ -854,7 +811,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Match Add/Edit Modal */}
       {isMatchModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl my-8">

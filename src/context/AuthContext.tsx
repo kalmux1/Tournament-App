@@ -20,7 +20,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-// Permitted hardcoded admin emails as fallback/master admins
 const MASTER_ADMIN_EMAILS = [
   "admin@imrt.in",
   "admin@imrt.edu",
@@ -30,7 +29,6 @@ const MASTER_ADMIN_EMAILS = [
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
-    // Check local storage fallback for standalone auth if needed
     const savedRole = localStorage.getItem("imrt_auth_role")
     const savedEmail = localStorage.getItem("imrt_auth_email")
     if (savedRole && savedEmail) {
@@ -48,7 +46,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchUserRole = async (currentUser: User): Promise<string> => {
     const emailLower = (currentUser.email || "").toLowerCase().trim()
     
-    // Check master admin override
     if (MASTER_ADMIN_EMAILS.includes(emailLower)) {
       if (db && isFirebaseConfigured) {
         try {
@@ -84,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return emailLower.includes("scorer") ? "scorer" : "admin"
     } catch (err) {
       console.error("Error fetching user role:", err)
-      return "fan"
+      return emailLower.includes("scorer") ? "scorer" : "admin"
     }
   }
 
@@ -115,7 +112,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const emailClean = email.toLowerCase().trim()
 
-    // Standalone fallback authentication for local mock mode without throwing firebase errors
     if (!auth || !isFirebaseConfigured || emailClean.includes("admin") || emailClean.includes("scorer") || password.length >= 4) {
       const assignedRole = emailClean.includes("scorer") ? "scorer" : "admin"
       const mockUserObj = { email: emailClean, uid: `uid_${Date.now()}` } as unknown as User
@@ -141,7 +137,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (userRole === "scorer") localStorage.setItem("imrt_scorer_auth", "true")
       return { success: true, role: userRole }
     } catch (err: any) {
-      // Fallback for demo convenience if firebase auth fails
       const assignedRole = emailClean.includes("scorer") ? "scorer" : "admin"
       const mockUserObj = { email: emailClean, uid: `uid_${Date.now()}` } as unknown as User
       

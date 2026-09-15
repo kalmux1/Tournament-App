@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Award, LogOut, Play, Pause, RotateCcw, Plus, Minus, ArrowLeft, Shield, Flame, Activity, CheckCircle2, RefreshCw } from "lucide-react"
-import { mockTeams } from "@/lib/mockData"
-import type { Team, Player } from "@/lib/types"
 import { useAuth } from "@/context/AuthContext"
+import { useData } from "@/context/DataContext"
+import type { Player } from "@/lib/types"
 
 interface LivePlayer extends Player {
   points: number
@@ -46,35 +46,23 @@ const DEFAULT_STATE: LiveGameState = {
   isShotRunning: false,
   shotClockPreset: 12,
   rosterA: [
-    { name: "Rahul Verma", jersey: 7, height: "6'2\"", role: "Guard", points: 6, fouls: 1, subbedOut: false },
-    { name: "Aditya Singh", jersey: 11, height: "6'5\"", role: "Forward", points: 4, fouls: 1, subbedOut: false },
-    { name: "Karan Mehta", jersey: 23, height: "6'7\"", role: "Center", points: 4, fouls: 1, subbedOut: false },
-    { name: "Sameer Roy", jersey: 4, height: "6'0\"", role: "Wing", points: 0, fouls: 0, subbedOut: true },
+    { name: "Rahul Verma", jersey: 7, height: "6'2\"", role: "Guard", isSub: false, points: 6, fouls: 1, subbedOut: false },
+    { name: "Aditya Singh", jersey: 11, height: "6'5\"", role: "Forward", isSub: false, points: 4, fouls: 1, subbedOut: false },
+    { name: "Karan Mehta", jersey: 23, height: "6'7\"", role: "Center", isSub: false, points: 4, fouls: 1, subbedOut: false },
+    { name: "Sameer Roy", jersey: 4, height: "6'0\"", role: "Wing", isSub: true, points: 0, fouls: 0, subbedOut: true },
   ],
   rosterB: [
-    { name: "Vikram Nair", jersey: 5, height: "6'1\"", role: "Guard", points: 5, fouls: 2, subbedOut: false },
-    { name: "Dev Patel", jersey: 14, height: "6'4\"", role: "Forward", points: 4, fouls: 1, subbedOut: false },
-    { name: "Arjun Das", jersey: 32, height: "6'6\"", role: "Center", points: 2, fouls: 1, subbedOut: false },
-    { name: "Neel Kapoor", jersey: 9, height: "5'11\"", role: "Wing", points: 0, fouls: 0, subbedOut: true },
+    { name: "Vikram Nair", jersey: 5, height: "6'1\"", role: "Guard", isSub: false, points: 5, fouls: 2, subbedOut: false },
+    { name: "Dev Patel", jersey: 14, height: "6'4\"", role: "Forward", isSub: false, points: 4, fouls: 1, subbedOut: false },
+    { name: "Arjun Das", jersey: 32, height: "6'6\"", role: "Center", isSub: false, points: 2, fouls: 1, subbedOut: false },
+    { name: "Neel Kapoor", jersey: 9, height: "5'11\"", role: "Wing", isSub: true, points: 0, fouls: 0, subbedOut: true },
   ],
 }
 
 export default function ScorerDashboard() {
   const navigate = useNavigate()
   const { logout } = useAuth()
-
-  const [teams] = useState<Team[]>(() => {
-    const saved = localStorage.getItem("imrt_teams")
-    if (saved !== null) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    return mockTeams
-  })
+  const { teams } = useData()
 
   const [gameState, setGameState] = useState<LiveGameState>(() => {
     const saved = localStorage.getItem("imrt_live_game")
@@ -102,7 +90,6 @@ export default function ScorerDashboard() {
     localStorage.setItem("imrt_live_game", JSON.stringify(gameState))
   }, [gameState])
 
-  // Game clock interval
   useEffect(() => {
     let interval: any = null
     if (gameState.isGameRunning && gameState.gameTime > 0) {
@@ -117,7 +104,6 @@ export default function ScorerDashboard() {
     return () => clearInterval(interval)
   }, [gameState.isGameRunning, gameState.gameTime])
 
-  // Shot clock interval
   useEffect(() => {
     let interval: any = null
     if (gameState.isShotRunning && gameState.shotTime > 0) {
@@ -140,7 +126,6 @@ export default function ScorerDashboard() {
     navigate("/scorer/login", { replace: true })
   }
 
-  // Clock handlers
   const toggleGameClock = () => setGameState((p) => ({ ...p, isGameRunning: !p.isGameRunning }))
   const resetGameClock = () => {
     setGameState((p) => ({ ...p, gameTime: 600, isGameRunning: false }))
@@ -231,9 +216,9 @@ export default function ScorerDashboard() {
     const liveRoster: LivePlayer[] = found && found.roster && found.roster.length > 0
       ? found.roster.map((p, idx) => ({ ...p, points: 0, fouls: 0, subbedOut: idx >= 3 }))
       : [
-          { name: "Player 1", jersey: 1, height: "6'0\"", role: "Guard", points: 0, fouls: 0, subbedOut: false },
-          { name: "Player 2", jersey: 2, height: "6'2\"", role: "Forward", points: 0, fouls: 0, subbedOut: false },
-          { name: "Player 3", jersey: 3, height: "6'4\"", role: "Center", points: 0, fouls: 0, subbedOut: false },
+          { name: "Player 1", jersey: 1, height: "6'0\"", role: "Guard", isSub: false, points: 0, fouls: 0, subbedOut: false },
+          { name: "Player 2", jersey: 2, height: "6'2\"", role: "Forward", isSub: false, points: 0, fouls: 0, subbedOut: false },
+          { name: "Player 3", jersey: 3, height: "6'4\"", role: "Center", isSub: false, points: 0, fouls: 0, subbedOut: false },
         ]
 
     if (teamSide === "A") {
@@ -267,7 +252,6 @@ export default function ScorerDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-28">
-      {/* Toast Notification Banner */}
       {notification && (
         <div className="fixed top-20 right-4 z-50 flex items-center gap-2 rounded-2xl border border-gold-500/40 bg-slate-900/95 px-4 py-3 text-xs font-bold text-gold-400 shadow-2xl backdrop-blur-xl animate-fade-in">
           <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
@@ -275,7 +259,6 @@ export default function ScorerDashboard() {
         </div>
       )}
 
-      {/* Header */}
       <header className="border-b border-white/10 bg-slate-900/90 backdrop-blur-xl sticky top-0 z-40">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -318,13 +301,11 @@ export default function ScorerDashboard() {
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-8">
         
-        {/* TOP MASTER SCOREBOARD & DIRECT SCORE CORRECTION */}
         <div className="relative rounded-3xl border border-gold-500/30 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-950 p-6 sm:p-10 shadow-2xl backdrop-blur-md overflow-hidden">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gold-500/10 via-transparent to-transparent pointer-events-none" />
           
           <div className="relative grid items-center gap-8 md:grid-cols-7 text-center">
             
-            {/* Team A Master Card */}
             <div className="md:col-span-3 space-y-4">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team A Squad</span>
@@ -368,7 +349,6 @@ export default function ScorerDashboard() {
               </div>
             </div>
 
-            {/* Central Score Display */}
             <div className="md:col-span-1 flex items-center justify-center">
               <div className="flex items-center gap-3 rounded-2xl border-2 border-gold-500/50 bg-slate-950/90 px-6 py-5 shadow-2xl shadow-gold-500/10">
                 <span className="font-mono text-5xl sm:text-6xl font-black text-white">{gameState.scoreA}</span>
@@ -377,7 +357,6 @@ export default function ScorerDashboard() {
               </div>
             </div>
 
-            {/* Team B Master Card */}
             <div className="md:col-span-3 space-y-4">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team B Squad</span>
@@ -424,9 +403,7 @@ export default function ScorerDashboard() {
           </div>
         </div>
 
-        {/* CLOCKS & PERIOD CONTROLS */}
         <div className="grid gap-6 md:grid-cols-3">
-          {/* Game Clock */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-md text-center flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -468,7 +445,6 @@ export default function ScorerDashboard() {
             </div>
           </div>
 
-          {/* FIBA Shot Clock */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-md text-center flex flex-col justify-between">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">FIBA Shot Clock</span>
@@ -519,7 +495,6 @@ export default function ScorerDashboard() {
             </div>
           </div>
 
-          {/* Period / Quarter */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-md flex flex-col justify-between">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Match Quarter / Period</span>
@@ -545,10 +520,8 @@ export default function ScorerDashboard() {
           </div>
         </div>
 
-        {/* ROSTER SCORING & DEPRECIATION / CORRECTION PANELS */}
         <div className="grid gap-8 lg:grid-cols-2">
           
-          {/* TEAM A ROSTER */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
@@ -593,7 +566,6 @@ export default function ScorerDashboard() {
                     </button>
                   </div>
 
-                  {/* Points Action Buttons (Add & Depreciate / Minus) */}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">Points:</span>
@@ -634,7 +606,6 @@ export default function ScorerDashboard() {
                       </button>
                     </div>
 
-                    {/* Fouls Control */}
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Fouls ({player.fouls}/5):</span>
                       {player.fouls >= 5 ? (
@@ -667,7 +638,6 @@ export default function ScorerDashboard() {
             </div>
           </div>
 
-          {/* TEAM B ROSTER */}
           <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
@@ -712,7 +682,6 @@ export default function ScorerDashboard() {
                     </button>
                   </div>
 
-                  {/* Points Action Buttons (Add & Depreciate / Minus) */}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">Points:</span>
@@ -753,7 +722,6 @@ export default function ScorerDashboard() {
                       </button>
                     </div>
 
-                    {/* Fouls Control */}
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Fouls ({player.fouls}/5):</span>
                       {player.fouls >= 5 ? (
