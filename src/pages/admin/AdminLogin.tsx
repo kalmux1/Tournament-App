@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { Shield, Lock, User, ArrowLeft, AlertCircle } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
-import { isFirebaseConfigured } from "@/lib/firebase"
+import { auth as firebaseAuth } from "@/lib/firebase"
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("")
@@ -20,10 +20,8 @@ export default function AdminLogin() {
     setError("")
     setLoading(true)
 
-    if (!isFirebaseConfigured) {
-      const err = new Error("Firebase environment variables are missing in .env. Please configure Firebase to sign in.")
-      console.error("Login attempt failed:", err)
-      setError(err.message)
+    if (!firebaseAuth) {
+      setError("Firebase Authentication is not initialized. Please check your configuration.")
       setLoading(false)
       return
     }
@@ -31,26 +29,27 @@ export default function AdminLogin() {
     try {
       const result = await login(email, password)
       if (!result.success) {
-        const err = new Error(result.error || "Login failed.")
-        console.error("Login attempt failed:", err)
-        setError(err.message)
-        setLoading(false)
-        return
+        throw new Error(result.error || "Login failed.")
       }
 
       if (result.role !== "admin") {
         await logout()
-        const err = new Error("Access denied: You do not have administrator privileges.")
-        console.error("Login attempt failed:", err)
-        setError(err.message)
-        setLoading(false)
-        return
+        throw new Error("Access denied: You do not have administrator privileges.")
       }
 
       navigate(from || "/admin", { replace: true })
     } catch (err: any) {
       console.error("Login attempt failed:", err)
-      setError(err?.message || "An unexpected error occurred during login.")
+      let message = err?.message || "An unexpected error occurred during login."
+      
+      // Clean up Firebase error codes for better user experience
+      if (message.includes("auth/invalid-credential") || message.includes("auth/user-not-found") || message.includes("auth/wrong-password")) {
+        message = "Invalid email or password. Please check your credentials."
+      } else if (message.includes("auth/too-many-requests")) {
+        message = "Access temporarily blocked due to many failed login attempts. Please try again later."
+      }
+
+      setError(message)
       setLoading(false)
     }
   }
