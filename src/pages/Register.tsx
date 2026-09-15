@@ -41,23 +41,18 @@ export default function Register() {
   const submit = async () => {
     const roster = [...players]
     if (sub.name.trim()) roster.push({ ...sub, isSub: true })
-    const team: Team = {
-      id: `t${Date.now()}`,
-      code: genCode(),
+    const code = genCode()
+    const teamData = {
+      code,
       name: name.trim(),
       color,
       category,
       pool: "TBD",
       captain,
       roster,
-      wins: 0,
-      losses: 0,
-      pointsFor: 0,
-      pointsAgainst: 0,
-      approved: false,
     }
-    await addTeam(team)
-    setDone(team)
+    await addTeam(teamData)
+    setDone({ ...teamData, id: `t${Date.now()}`, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, approved: false } as Team)
   }
 
   if (done) {

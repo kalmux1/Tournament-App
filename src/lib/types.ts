@@ -44,6 +44,7 @@ export interface Match {
   date: string
   stage?: string
   pool?: string
+  round?: string
   winnerId?: string
   venue?: string
 }
