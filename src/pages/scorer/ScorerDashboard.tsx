@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { Award, LogOut, Play, Pause, RotateCcw, Plus, Minus, ArrowLeft, Shield, Flame, Activity, CheckCircle2, RefreshCw, UserCheck, UserX, AlertTriangle, X } from "lucide-react"
+import { Award, LogOut, Play, Pause, RotateCcw, Plus, Minus, ArrowLeft, Shield, Flame, Activity, CircleCheck as CheckCircle2, RefreshCw, UserCheck, UserX, TriangleAlert as AlertTriangle, X } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { useData } from "@/context/DataContext"
 import type { Player } from "@/lib/types"
+import { doc, updateDoc, onSnapshot, serverTimestamp } from "firebase/firestore"
+import { db, isFirebaseConfigured } from "@/lib/firebase"
 
 interface LivePlayer extends Player {
   points: number
@@ -62,7 +64,7 @@ const DEFAULT_STATE: LiveGameState = {
 export default function ScorerDashboard() {
   const navigate = useNavigate()
   const { logout } = useAuth()
-  const { teams } = useData()
+  const { teams, matches } = useData()
 
   const [gameState, setGameState] = useState<LiveGameState>(() => {
     const saved = localStorage.getItem("imrt_live_game_v2")
@@ -80,12 +82,63 @@ export default function ScorerDashboard() {
     setTimeout(() => setNotification(null), 2500)
   }
 
+  const [matchId, setMatchId] = useState<string>("live_match_1")
+  const isUpdatingRef = useRef(false)
+
+  const syncToFirestore = async (updateData: Record<string, any>) => {
+    if (!db || !isFirebaseConfigured) {
+      console.log("Firestore not configured — skipping sync for match:", matchId, updateData)
+      return
+    }
+    isUpdatingRef.current = true
+    try {
+      console.log("Updating Firestore match:", matchId, updateData)
+      await updateDoc(doc(db, "matches", matchId), {
+        ...updateData,
+        updatedAt: serverTimestamp(),
+      })
+    } catch (err) {
+      console.error("Firestore sync error:", err)
+      isUpdatingRef.current = false
+    }
+  }
+
   useEffect(() => {
     const isAuthed = localStorage.getItem("imrt_scorer_auth") || localStorage.getItem("imrt_auth_role") === "scorer" || localStorage.getItem("imrt_auth_role") === "admin"
     if (!isAuthed) {
       navigate("/scorer/login")
     }
   }, [navigate])
+
+  useEffect(() => {
+    const teamA = teams.find((t) => t.name === gameState.teamAName)
+    const teamB = teams.find((t) => t.name === gameState.teamBName)
+    if (teamA && teamB) {
+      const match = matches.find(
+        (m) =>
+          (m.teamAId === teamA.id && m.teamBId === teamB.id) ||
+          (m.teamAId === teamB.id && m.teamBId === teamA.id)
+      )
+      if (match) setMatchId(match.id)
+    }
+  }, [gameState.teamAName, gameState.teamBName, teams, matches])
+
+  useEffect(() => {
+    if (!db || !isFirebaseConfigured) return
+    const matchRef = doc(db, "matches", matchId)
+    const unsub = onSnapshot(matchRef, (snap) => {
+      if (isUpdatingRef.current) {
+        isUpdatingRef.current = false
+        return
+      }
+      if (snap.exists()) {
+        const data = snap.data()
+        const { updatedAt, ...gameData } = data
+        setGameState((prev) => ({ ...prev, ...gameData }))
+      }
+    })
+    return () => unsub()
+  }, [matchId])
 
   useEffect(() => {
     localStorage.setItem("imrt_live_game_v2", JSON.stringify(gameState))
@@ -129,40 +182,58 @@ export default function ScorerDashboard() {
     navigate("/scorer/login", { replace: true })
   }
 
-  const toggleGameClock = () => setGameState((p) => ({ ...p, isGameRunning: !p.isGameRunning }))
+  const toggleGameClock = () => {
+    const newRunning = !gameState.isGameRunning
+    setGameState((p) => ({ ...p, isGameRunning: !p.isGameRunning }))
+    syncToFirestore({ isGameRunning: newRunning, gameTime: gameState.gameTime })
+  }
   const resetGameClock = () => {
     setGameState((p) => ({ ...p, gameTime: 600, isGameRunning: false }))
     showNotice("Game clock reset to 10:00")
+    syncToFirestore({ gameTime: 600, isGameRunning: false })
   }
   const addOneMinute = () => {
+    const newTime = gameState.gameTime + 60
     setGameState((p) => ({ ...p, gameTime: p.gameTime + 60 }))
     showNotice("Added +1:00 to Game Clock")
+    syncToFirestore({ gameTime: newTime })
   }
 
-  const toggleShotClock = () => setGameState((p) => ({ ...p, isShotRunning: !p.isShotRunning }))
+  const toggleShotClock = () => {
+    const newRunning = !gameState.isShotRunning
+    setGameState((p) => ({ ...p, isShotRunning: !p.isShotRunning }))
+    syncToFirestore({ isShotRunning: newRunning, shotTime: gameState.shotTime })
+  }
   const resetShotClock = (val: number) => {
     setGameState((p) => ({ ...p, shotTime: val, shotClockPreset: val, isShotRunning: true }))
     showNotice(`Shot clock reset to ${val}s`)
+    syncToFirestore({ shotTime: val, shotClockPreset: val, isShotRunning: true })
   }
 
   const adjustTeamScoreDirect = (team: "A" | "B", delta: number) => {
+    const scoreKey = team === "A" ? "scoreA" : "scoreB"
+    const newScore = Math.max(0, gameState[scoreKey] + delta)
     setGameState((prev) => {
-      const scoreKey = team === "A" ? "scoreA" : "scoreB"
       const teamName = team === "A" ? prev.teamAName : prev.teamBName
-      const newScore = Math.max(0, prev[scoreKey] + delta)
-      showNotice(`${teamName} score updated to ${newScore}`)
+      const updatedScore = Math.max(0, prev[scoreKey] + delta)
+      showNotice(`${teamName} score updated to ${updatedScore}`)
       return {
         ...prev,
-        [scoreKey]: newScore,
+        [scoreKey]: updatedScore,
       }
     })
+    syncToFirestore({ [scoreKey]: newScore })
   }
 
   const modifyPlayerPoints = (team: "A" | "B", playerIndex: number, delta: number) => {
+    const rosterKey = team === "A" ? "rosterA" : "rosterB"
+    const scoreKey = team === "A" ? "scoreA" : "scoreB"
+    const newTeamScore = Math.max(0, gameState[scoreKey] + delta)
+    const newRoster = gameState[rosterKey].map((p, idx) => {
+      if (idx === playerIndex) return { ...p, points: Math.max(0, p.points + delta) }
+      return p
+    })
     setGameState((prev) => {
-      const rosterKey = team === "A" ? "rosterA" : "rosterB"
-      const scoreKey = team === "A" ? "scoreA" : "scoreB"
-      
       const updatedRoster = prev[rosterKey].map((p, idx) => {
         if (idx === playerIndex) {
           const newPoints = Math.max(0, p.points + delta)
@@ -173,23 +244,28 @@ export default function ScorerDashboard() {
 
       const player = updatedRoster[playerIndex]
       const pointDifference = delta
-      const newTeamScore = Math.max(0, prev[scoreKey] + pointDifference)
+      const updatedTeamScore = Math.max(0, prev[scoreKey] + pointDifference)
 
       showNotice(`${player.name}: ${delta > 0 ? `+${delta}` : delta} pt`)
 
       return {
         ...prev,
-        [scoreKey]: newTeamScore,
+        [scoreKey]: updatedTeamScore,
         [rosterKey]: updatedRoster,
       }
     })
+    syncToFirestore({ [scoreKey]: newTeamScore, [rosterKey]: newRoster })
   }
 
   const adjustPlayerFouls = (team: "A" | "B", playerIndex: number, delta: number) => {
+    const rosterKey = team === "A" ? "rosterA" : "rosterB"
+    const foulKey = team === "A" ? "foulsA" : "foulsB"
+    const newTeamFouls = Math.max(0, gameState[foulKey] + delta)
+    const newRoster = gameState[rosterKey].map((p, idx) => {
+      if (idx === playerIndex) return { ...p, fouls: Math.max(0, Math.min(5, p.fouls + delta)) }
+      return p
+    })
     setGameState((prev) => {
-      const rosterKey = team === "A" ? "rosterA" : "rosterB"
-      const foulKey = team === "A" ? "foulsA" : "foulsB"
-      
       const updatedRoster = prev[rosterKey].map((p, idx) => {
         if (idx === playerIndex) {
           const newFouls = Math.max(0, Math.min(5, p.fouls + delta))
@@ -206,11 +282,16 @@ export default function ScorerDashboard() {
         [rosterKey]: updatedRoster,
       }
     })
+    syncToFirestore({ [foulKey]: newTeamFouls, [rosterKey]: newRoster })
   }
 
   const toggleSub = (team: "A" | "B", playerIndex: number) => {
+    const rosterKey = team === "A" ? "rosterA" : "rosterB"
+    const newRoster = gameState[rosterKey].map((p, idx) => {
+      if (idx === playerIndex) return { ...p, subbedOut: !p.subbedOut }
+      return p
+    })
     setGameState((prev) => {
-      const rosterKey = team === "A" ? "rosterA" : "rosterB"
       const updatedRoster = prev[rosterKey].map((p, idx) => {
         if (idx === playerIndex) {
           const nextSubState = !p.subbedOut
@@ -221,6 +302,7 @@ export default function ScorerDashboard() {
       })
       return { ...prev, [rosterKey]: updatedRoster }
     })
+    syncToFirestore({ [rosterKey]: newRoster })
   }
 
   const formatTime = (seconds: number) => {
@@ -248,6 +330,7 @@ export default function ScorerDashboard() {
         foulsA: 0,
         rosterA: liveRoster,
       }))
+      syncToFirestore({ teamAName: teamName, teamAColor: found?.color || "#6B1728", scoreA: 0, foulsA: 0, rosterA: liveRoster })
     } else {
       setGameState((p) => ({
         ...p,
@@ -257,6 +340,7 @@ export default function ScorerDashboard() {
         foulsB: 0,
         rosterB: liveRoster,
       }))
+      syncToFirestore({ teamBName: teamName, teamBColor: found?.color || "#0F172A", scoreB: 0, foulsB: 0, rosterB: liveRoster })
     }
     showNotice(`Loaded team: ${teamName}`)
   }
@@ -265,6 +349,7 @@ export default function ScorerDashboard() {
     setGameState(DEFAULT_STATE)
     setShowResetModal(false)
     showNotice("Scoreboard reset to default state.")
+    syncToFirestore({ ...DEFAULT_STATE })
   }
 
   return (
@@ -568,6 +653,7 @@ export default function ScorerDashboard() {
                     const next = gameState.period === "Q1" ? "Q2" : gameState.period === "Q2" ? "Q3" : gameState.period === "Q3" ? "Q4" : "OT"
                     setGameState((p) => ({ ...p, period: next, gameTime: 600 }))
                     showNotice(`Switched to period: ${next}`)
+                    syncToFirestore({ period: next, gameTime: 600 })
                   }}
                   className="rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-xs font-bold text-gold-400 hover:bg-gold-500/20 transition cursor-pointer"
                 >
