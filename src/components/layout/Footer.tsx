@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom"
-import { TOURNAMENT } from "@/lib/mockData"
+import { useData } from "@/context/DataContext"
 
 export default function Footer() {
+  const { tournament } = useData()
+
   return (
     <footer className="border-t border-white/10 bg-slate-950">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-4">
@@ -10,11 +12,10 @@ export default function Footer() {
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-maroon-600 to-gold-500 font-display text-lg font-bold text-white">
               3x3
             </span>
-            <span className="font-display text-xl font-bold text-white">IMRT 3x3 Championship</span>
+            <span className="font-display text-xl font-bold text-white">{tournament.name}</span>
           </div>
           <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">
-            The official hub for the IMRT 3x3 Basketball Championship 2026. Played under FIBA 3x3 rules across three
-            electric days of half-court hoops.
+            The official hub for the {tournament.name}. Played under FIBA 3x3 rules across electric days of half-court hoops at {tournament.venue}.
           </p>
         </div>
 
@@ -30,9 +31,9 @@ export default function Footer() {
         <div>
           <h4 className="font-display text-sm font-semibold text-gold-500">Event</h4>
           <ul className="mt-4 space-y-2 text-sm text-slate-400">
-            <li>{TOURNAMENT.dates}</li>
-            <li>{TOURNAMENT.venue}</li>
-            <li>{TOURNAMENT.city}</li>
+            <li>{tournament.dates}</li>
+            <li>{tournament.venue}</li>
+            <li>{tournament.city}</li>
             <li>kal.mux.cyber@gmail.com</li>
           </ul>
         </div>
@@ -41,7 +42,7 @@ export default function Footer() {
       <div className="border-t border-white/10 px-4 py-6 sm:px-6">
         <div className="mx-auto flex max-w-7xl justify-center">
           <div className="text-center text-xs text-slate-500">
-            © 2026 IMRT 3x3 Basketball Championship | Created by <a href="https://linktr.ee/kalmux" target="_blank" rel="noopener noreferrer" className="font-medium text-gold-500 hover:underline">KALMUX</a>
+            © 2026 {tournament.name} | Created by <a href="https://linktr.ee/kalmux" target="_blank" rel="noopener noreferrer" className="font-medium text-gold-500 hover:underline">KALMUX</a>
           </div>
         </div>
       </div>

@@ -3,9 +3,10 @@ import type { Team, Match, Scorer } from "./types"
 export const TOURNAMENT = {
   name: "IMRT 3x3 Basketball Championship",
   year: 2026,
-  dates: "March 15 - 17, 2026",
-  venue: "IMRT Indoor Sports Arena",
-  city: "New Delhi, India"
+  dates: "September 27 - October 3, 2026",
+  venue: "IMRT Basketball Court Near Divine Bliss",
+  city: "New Delhi, India",
+  tipOff: "2026-09-27T09:00:00"
 }
 
 export const mockTeams: Team[] = [
@@ -168,8 +169,9 @@ export const mockMatches: Match[] = [
     scoreB: 18,
     status: "completed",
     time: "09:30 AM",
+    date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Indoor Arena"
+    venue: "IMRT Basketball Court Near Divine Bliss"
   },
   {
     id: "m_2",
@@ -181,8 +183,9 @@ export const mockMatches: Match[] = [
     scoreB: 14,
     status: "completed",
     time: "10:15 AM",
+    date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Indoor Arena"
+    venue: "IMRT Basketball Court Near Divine Bliss"
   },
   {
     id: "m_3",
@@ -194,8 +197,9 @@ export const mockMatches: Match[] = [
     scoreB: 11,
     status: "completed",
     time: "11:00 AM",
+    date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Indoor Arena"
+    venue: "IMRT Basketball Court Near Divine Bliss"
   },
   {
     id: "m_4",
@@ -207,8 +211,9 @@ export const mockMatches: Match[] = [
     scoreB: 14,
     status: "live",
     time: "11:45 AM",
+    date: "2026-09-27",
     round: "Quarterfinals",
-    venue: "IMRT Indoor Arena"
+    venue: "IMRT Basketball Court Near Divine Bliss"
   },
   {
     id: "m_5",
@@ -220,8 +225,9 @@ export const mockMatches: Match[] = [
     scoreB: 0,
     status: "upcoming",
     time: "12:30 PM",
+    date: "2026-09-28",
     round: "Semifinals",
-    venue: "IMRT Indoor Arena"
+    venue: "IMRT Basketball Court Near Divine Bliss"
   }
 ]
 

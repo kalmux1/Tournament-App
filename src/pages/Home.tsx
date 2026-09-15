@@ -3,15 +3,14 @@ import { CalendarDays, MapPin, PlayCircle, Trophy, Users, Radio, ArrowRight } fr
 import Countdown from "@/components/Countdown"
 import MatchCard from "@/components/MatchCard"
 import TeamLogo from "@/components/TeamLogo"
-import { TOURNAMENT } from "@/lib/mockData"
 import { useData } from "@/context/DataContext"
 
 export default function Home() {
-  const { matches, teams, scorers, getTeam } = useData()
+  const { matches, teams, scorers, getTeam, tournament } = useData()
   const live = matches.filter((m) => m.status === "live")
   const upcoming = matches.filter((m) => m.status === "upcoming").slice(0, 3)
   const featured = live.length ? live : upcoming.slice(0, 3)
-  const topScorer = scorers[0]
+  const topScorer = scorers[0] // or computed from players
 
   return (
     <div>
@@ -29,19 +28,18 @@ export default function Home() {
               <Radio className="h-3.5 w-3.5" /> Official FIBA 3x3 Championship
             </span>
             <h1 className="mt-6 font-display text-5xl font-bold leading-[0.95] text-white sm:text-7xl lg:text-8xl">
-              IMRT 3x3 <span className="text-gold-500">Basketball</span> 2026
+              {tournament.name.split(" ")[0]} 3x3 <span className="text-gold-500">Basketball</span> 2026
             </h1>
             <p className="mt-5 max-w-xl text-lg text-slate-300">
-              Three days. One court. Non-stop half-court action under official FIBA 3x3 rules. Register your squad and
-              chase the crown.
+              Seven days of high-intensity half-court action under official FIBA 3x3 rules at {tournament.venue}. Register your squad and chase the crown.
             </p>
 
             <div className="mt-7 flex flex-wrap gap-4 text-sm">
               <span className="flex items-center gap-2 text-slate-200">
-                <CalendarDays className="h-5 w-5 text-gold-500" /> {TOURNAMENT.dates}
+                <CalendarDays className="h-5 w-5 text-gold-500" /> {tournament.dates}
               </span>
               <span className="flex items-center gap-2 text-slate-200">
-                <MapPin className="h-5 w-5 text-gold-500" /> {TOURNAMENT.venue}
+                <MapPin className="h-5 w-5 text-gold-500" /> {tournament.venue}
               </span>
             </div>
 
@@ -58,8 +56,8 @@ export default function Home() {
             </div>
 
             <div className="mt-10">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Tip-off in</p>
-              <Countdown target={TOURNAMENT.tipOff} />
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Tournament Tip-off In</p>
+              <Countdown target={tournament.tipOff} />
             </div>
           </div>
         </div>
@@ -103,7 +101,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Highlight row: top scorer + CTA */}
+      {/* Highlight row */}
       <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
         <div className="grid gap-6 lg:grid-cols-3">
           {topScorer && (
@@ -136,8 +134,7 @@ export default function Home() {
             <div className="relative">
               <h3 className="font-display text-3xl font-bold text-white">Your squad. The big stage.</h3>
               <p className="mt-2 max-w-md text-sm text-white/80">
-                Rally three starters and a reserve, pick your category, and lock your spot in the 2026 bracket. Spots are
-                limited per pool.
+                Rally three starters and a reserve, pick your category, and lock your spot in the championship bracket at {tournament.venue}.
               </p>
               <Link to="/register" className="btn-gold mt-6">
                 Register Now <ArrowRight className="h-4 w-4" />

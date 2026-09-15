@@ -21,6 +21,10 @@ export default function Navbar() {
     { name: "Rules & Format", href: "/rules" },
   ]
 
+  // If user is authenticated as admin or scorer, go straight to dashboard, otherwise go to login portal
+  const adminDest = role === "admin" ? "/admin" : "/admin/login"
+  const scorerDest = (role === "admin" || role === "scorer") ? "/scorer" : "/scorer/login"
+
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -35,7 +39,7 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-8">
+        <nav className="hidden md:flex items-center gap-6">
           {navLinks.map((link) => {
             const isActive = location.pathname === link.href
             return (
@@ -52,51 +56,44 @@ export default function Navbar() {
           })}
         </nav>
 
-        {/* Right side actions */}
-        <div className="hidden md:flex items-center gap-4">
-          {user ? (
-            <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 py-1.5 pl-3 pr-2 backdrop-blur-sm">
-              <div className="flex items-center gap-2">
-                {role === "admin" ? (
-                  <Shield className="h-4 w-4 text-gold-400" />
-                ) : role === "scorer" ? (
-                  <Award className="h-4 w-4 text-gold-400" />
-                ) : (
-                  <UserIcon className="h-4 w-4 text-slate-400" />
-                )}
-                <span className="text-xs font-medium text-slate-200 max-w-[140px] truncate">
-                  {user.email}
-                </span>
-                {role && (
-                  <span className="rounded bg-gold-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold-400">
-                    {role}
-                  </span>
-                )}
-              </div>
+        {/* Right side actions - Always showing Admin & Scorer buttons alongside user profile if logged in */}
+        <div className="hidden md:flex items-center gap-3">
+          {user && (
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 py-1 pl-3 pr-2 backdrop-blur-sm">
+              {role === "admin" ? (
+                <Shield className="h-3.5 w-3.5 text-gold-400" />
+              ) : role === "scorer" ? (
+                <Award className="h-3.5 w-3.5 text-gold-400" />
+              ) : (
+                <UserIcon className="h-3.5 w-3.5 text-slate-400" />
+              )}
+              <span className="text-xs font-medium text-slate-200 max-w-[120px] truncate">
+                {user.email || "admin@imrt.in"}
+              </span>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white transition hover:bg-red-500/20 hover:text-red-400"
+                className="ml-1 rounded-full p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition"
                 title="Logout"
               >
-                <LogOut className="h-3.5 w-3.5" /> Logout
+                <LogOut className="h-3.5 w-3.5" />
               </button>
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Link
-                to="/admin/login"
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
-              >
-                Admin
-              </Link>
-              <Link
-                to="/scorer/login"
-                className="rounded-xl bg-gold-500 px-4 py-2 text-xs font-medium text-slate-950 font-semibold transition hover:brightness-110 shadow-md shadow-gold-500/20"
-              >
-                Scorer
-              </Link>
-            </div>
           )}
+
+          <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+            <Link
+              to={adminDest}
+              className="flex items-center gap-1.5 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3.5 py-2 text-xs font-semibold text-gold-400 transition hover:bg-gold-500/20 shadow-sm"
+            >
+              <Shield className="h-3.5 w-3.5" /> Admin
+            </Link>
+            <Link
+              to={scorerDest}
+              className="flex items-center gap-1.5 rounded-xl bg-gold-500 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:brightness-110 shadow-md shadow-gold-500/20"
+            >
+              <Award className="h-3.5 w-3.5" /> Scorer
+            </Link>
+          </div>
         </div>
 
         {/* Mobile menu button */}
@@ -124,43 +121,37 @@ export default function Navbar() {
                 {link.name}
               </Link>
             ))}
-            <div className="pt-4 border-t border-white/10 flex flex-col gap-2">
-              {user ? (
-                <>
-                  <div className="flex items-center justify-between px-3 py-2 text-xs text-slate-300">
-                    <span>{user.email}</span>
-                    <span className="rounded bg-gold-500/10 px-2 py-0.5 text-gold-400 uppercase font-semibold">
-                      {role || "fan"}
-                    </span>
-                  </div>
+            <div className="pt-4 border-t border-white/10 flex flex-col gap-2.5">
+              {user && (
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 text-xs text-slate-300">
+                  <span className="truncate">{user.email || "admin@imrt.in"}</span>
                   <button
                     onClick={() => {
                       handleLogout()
                       setIsOpen(false)
                     }}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500/10 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-500/20"
+                    className="flex items-center gap-1 text-red-400 hover:text-red-300"
                   >
-                    <LogOut className="h-4 w-4" /> Logout
+                    <LogOut className="h-3.5 w-3.5" /> Logout
                   </button>
-                </>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <Link
-                    to="/admin/login"
-                    onClick={() => setIsOpen(false)}
-                    className="flex items-center justify-center rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-medium text-white"
-                  >
-                    Admin Login
-                  </Link>
-                  <Link
-                    to="/scorer/login"
-                    onClick={() => setIsOpen(false)}
-                    className="flex items-center justify-center rounded-xl bg-gold-500 py-2.5 text-sm font-semibold text-slate-950"
-                  >
-                    Scorer Login
-                  </Link>
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-2">
+                <Link
+                  to={adminDest}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-gold-500/30 bg-gold-500/10 py-2.5 text-xs font-semibold text-gold-400"
+                >
+                  <Shield className="h-3.5 w-3.5" /> Admin Portal
+                </Link>
+                <Link
+                  to={scorerDest}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-gold-500 py-2.5 text-xs font-semibold text-slate-950"
+                >
+                  <Award className="h-3.5 w-3.5" /> Scorer Console
+                </Link>
+              </div>
             </div>
           </nav>
         </div>

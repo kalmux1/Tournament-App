@@ -1,229 +1,146 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import {
-  collection,
-  onSnapshot,
-  doc,
-  setDoc,
-  updateDoc,
-  addDoc,
-  deleteDoc,
-} from "firebase/firestore"
-import { db, isFirebaseConfigured } from "@/lib/firebase"
-import { mockTeams, mockMatches, mockScorers } from "@/lib/mockData"
-import type { Team, Match, Scorer } from "@/lib/types"
+import React, { createContext, useContext, useState, useEffect } from "react"
+import { mockTeams, mockMatches, mockScorers, TOURNAMENT } from "@/lib/mockData"
+import type { Team, Match, Scorer, TournamentSettings } from "@/lib/types"
 
-interface DataContextValue {
+interface DataContextType {
   teams: Team[]
   matches: Match[]
   scorers: Scorer[]
-  usingMock: boolean
+  tournament: TournamentSettings
+  addTeam: (team: Omit<Team, "id" | "wins" | "losses" | "pointsFor" | "pointsAgainst" | "approved">) => void
+  updateTeamStatus: (teamId: string, approved: boolean) => void
+  updateMatchScore: (matchId: string, scoreA: number, scoreB: number, status: Match["status"]) => void
+  addMatch: (match: Omit<Match, "id">) => void
+  deleteMatch: (matchId: string) => void
+  addScorer: (scorer: Omit<Scorer, "id">) => void
+  deleteScorer: (scorerId: string) => void
+  updateTournamentSettings: (settings: Partial<TournamentSettings>) => void
   getTeam: (id: string) => Team | undefined
-  addTeam: (team: Team) => Promise<void>
-  updateTeam: (id: string, data: Partial<Team>) => Promise<void>
-  deleteTeam: (id: string) => Promise<void>
-  approveTeam: (id: string, approved: boolean) => Promise<void>
-  addMatch: (match: Match) => Promise<void>
-  updateMatch: (id: string, data: Partial<Match>) => Promise<void>
-  deleteMatch: (id: string) => Promise<void>
-  resetAllData: () => void
-  restoreSampleData: () => void
 }
 
-const DataContext = createContext<DataContextValue | null>(null)
+const DataContext = createContext<DataContextType | undefined>(undefined)
 
-export function DataProvider({ children }: { children: ReactNode }) {
+export function DataProvider({ children }: { children: React.ReactNode }) {
   const [teams, setTeams] = useState<Team[]>(() => {
-    try {
-      const saved = localStorage.getItem("imrt_teams")
-      if (saved !== null) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) return parsed
-      }
-      return mockTeams
-    } catch {
-      return mockTeams
-    }
-  })
-  
-  const [matches, setMatches] = useState<Match[]>(() => {
-    try {
-      const saved = localStorage.getItem("imrt_matches")
-      if (saved !== null) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) return parsed
-      }
-      return mockMatches
-    } catch {
-      return mockMatches
-    }
+    const saved = localStorage.getItem("imrt_teams")
+    return saved ? JSON.parse(saved) : mockTeams
   })
 
-  const [scorers] = useState<Scorer[]>(mockScorers)
+  const [matches, setMatches] = useState<Match[]>(() => {
+    const saved = localStorage.getItem("imrt_matches")
+    return saved ? JSON.parse(saved) : mockMatches
+  })
+
+  const [scorers, setScorers] = useState<Scorer[]>(() => {
+    const saved = localStorage.getItem("imrt_scorers")
+    return saved ? JSON.parse(saved) : mockScorers
+  })
+
+  const [tournament, setTournament] = useState<TournamentSettings>(() => {
+    const saved = localStorage.getItem("imrt_tournament")
+    return saved ? JSON.parse(saved) : {
+      name: TOURNAMENT.name,
+      dates: TOURNAMENT.dates,
+      venue: TOURNAMENT.venue,
+      city: TOURNAMENT.city,
+      tipOff: TOURNAMENT.tipOff
+    }
+  })
 
   useEffect(() => {
-    try {
-      localStorage.setItem("imrt_teams", JSON.stringify(teams))
-    } catch (e) {
-      console.error("Failed to save teams to localStorage", e)
-    }
+    localStorage.setItem("imrt_teams", JSON.stringify(teams))
   }, [teams])
 
   useEffect(() => {
-    try {
-      localStorage.setItem("imrt_matches", JSON.stringify(matches))
-    } catch (e) {
-      console.error("Failed to save matches to localStorage", e)
-    }
+    localStorage.setItem("imrt_matches", JSON.stringify(matches))
   }, [matches])
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return
-    try {
-      const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
-        if (!snap.empty) {
-          setTeams(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Team))
-        }
-      }, (err) => {
-        console.warn("Firestore teams snapshot warning:", err)
-      })
+    localStorage.setItem("imrt_scorers", JSON.stringify(scorers))
+  }, [scorers])
 
-      const unsubMatches = onSnapshot(collection(db, "matches"), (snap) => {
-        if (!snap.empty) {
-          setMatches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Match))
-        }
-      }, (err) => {
-        console.warn("Firestore matches snapshot warning:", err)
-      })
+  useEffect(() => {
+    localStorage.setItem("imrt_tournament", JSON.stringify(tournament))
+  }, [tournament])
 
-      return () => {
-        unsubTeams()
-        unsubMatches()
-      }
-    } catch (e) {
-      console.error("Error setting up Firebase snapshots:", e)
+  const addTeam = (newTeamData: Omit<Team, "id" | "wins" | "losses" | "pointsFor" | "pointsAgainst" | "approved">) => {
+    const newTeam: Team = {
+      ...newTeamData,
+      id: `team_${Date.now()}`,
+      wins: 0,
+      losses: 0,
+      pointsFor: 0,
+      pointsAgainst: 0,
+      approved: false
     }
-  }, [])
+    setTeams((prev) => [newTeam, ...prev])
+  }
 
-  const value = useMemo<DataContextValue>(() => {
-    const getTeam = (id: string) => teams.find((t) => t.id === id)
+  const updateTeamStatus = (teamId: string, approved: boolean) => {
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, approved } : t)))
+  }
 
-    const addTeam = async (team: Team) => {
-      setTeams((prev) => [team, ...prev])
-      if (isFirebaseConfigured && db) {
-        try {
-          const { id, ...rest } = team
-          await addDoc(collection(db, "teams"), rest)
-        } catch (e) {
-          console.error("Failed to add team to Firestore:", e)
-        }
-      }
+  const updateMatchScore = (matchId: string, scoreA: number, scoreB: number, status: Match["status"]) => {
+    setMatches((prev) =>
+      prev.map((m) => (m.id === matchId ? { ...m, scoreA, scoreB, status } : m))
+    )
+  }
+
+  const addMatch = (newMatchData: Omit<Match, "id">) => {
+    const newMatch: Match = {
+      ...newMatchData,
+      id: `match_${Date.now()}`
     }
+    setMatches((prev) => [newMatch, ...prev])
+  }
 
-    const updateTeam = async (id: string, data: Partial<Team>) => {
-      setTeams((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)))
-      if (isFirebaseConfigured && db) {
-        try {
-          await setDoc(doc(db, "teams", id), data, { merge: true })
-        } catch (e) {
-          console.error("Failed to update team in Firestore:", e)
-        }
-      }
+  const deleteMatch = (matchId: string) => {
+    setMatches((prev) => prev.filter((m) => m.id !== matchId))
+  }
+
+  const addScorer = (newScorerData: Omit<Scorer, "id">) => {
+    const newScorer: Scorer = {
+      ...newScorerData,
+      id: `scorer_${Date.now()}`
     }
+    setScorers((prev) => [...prev, newScorer])
+  }
 
-    const deleteTeam = async (id: string) => {
-      setTeams((prev) => prev.filter((t) => t.id !== id))
-      if (isFirebaseConfigured && db) {
-        try {
-          await deleteDoc(doc(db, "teams", id))
-        } catch (e) {
-          console.error("Failed to delete team from Firestore:", e)
-        }
-      }
-    }
+  const deleteScorer = (scorerId: string) => {
+    setScorers((prev) => prev.filter((s) => s.id !== scorerId))
+  }
 
-    const approveTeam = async (id: string, approved: boolean) => {
-      setTeams((prev) => prev.map((t) => (t.id === id ? { ...t, approved } : t)))
-      if (isFirebaseConfigured && db) {
-        try {
-          await updateDoc(doc(db, "teams", id), { approved })
-        } catch (e) {
-          console.error("Failed to update team approval in Firestore:", e)
-        }
-      }
-    }
+  const updateTournamentSettings = (newSettings: Partial<TournamentSettings>) => {
+    setTournament((prev) => ({ ...prev, ...newSettings }))
+  }
 
-    const addMatch = async (match: Match) => {
-      setMatches((prev) => [match, ...prev])
-      if (isFirebaseConfigured && db) {
-        try {
-          const { id, ...rest } = match
-          await addDoc(collection(db, "matches"), rest)
-        } catch (e) {
-          console.error("Failed to add match to Firestore:", e)
-        }
-      }
-    }
+  const getTeam = (id: string) => teams.find((t) => t.id === id)
 
-    const updateMatch = async (id: string, data: Partial<Match>) => {
-      setMatches((prev) => prev.map((m) => (m.id === id ? { ...m, ...data } : m)))
-      if (isFirebaseConfigured && db) {
-        try {
-          await setDoc(doc(db, "matches", id), data, { merge: true })
-        } catch (e) {
-          console.error("Failed to update match in Firestore:", e)
-        }
-      }
-    }
-
-    const deleteMatch = async (id: string) => {
-      setMatches((prev) => prev.filter((m) => m.id !== id))
-      if (isFirebaseConfigured && db) {
-        try {
-          await deleteDoc(doc(db, "matches", id))
-        } catch (e) {
-          console.error("Failed to delete match from Firestore:", e)
-        }
-      }
-    }
-
-    const resetAllData = () => {
-      setTeams([])
-      setMatches([])
-      localStorage.setItem("imrt_teams", JSON.stringify([]))
-      localStorage.setItem("imrt_matches", JSON.stringify([]))
-      localStorage.removeItem("imrt_live_game")
-    }
-
-    const restoreSampleData = () => {
-      setTeams(mockTeams)
-      setMatches(mockMatches)
-      localStorage.setItem("imrt_teams", JSON.stringify(mockTeams))
-      localStorage.setItem("imrt_matches", JSON.stringify(mockMatches))
-    }
-
-    return {
-      teams,
-      matches,
-      scorers,
-      usingMock: !isFirebaseConfigured,
-      getTeam,
-      addTeam,
-      updateTeam,
-      deleteTeam,
-      approveTeam,
-      addMatch,
-      updateMatch,
-      deleteMatch,
-      resetAllData,
-      restoreSampleData,
-    }
-  }, [teams, matches, scorers])
-
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>
+  return (
+    <DataContext.Provider
+      value={{
+        teams,
+        matches,
+        scorers,
+        tournament,
+        addTeam,
+        updateTeamStatus,
+        updateMatchScore,
+        addMatch,
+        deleteMatch,
+        addScorer,
+        deleteScorer,
+        updateTournamentSettings,
+        getTeam
+      }}
+    >
+      {children}
+    </DataContext.Provider>
+  )
 }
 
 export function useData() {
-  const ctx = useContext(DataContext)
-  if (!ctx) throw new Error("useData must be used within DataProvider")
-  return ctx
+  const context = useContext(DataContext)
+  if (!context) throw new Error("useData must be used within a DataProvider")
+  return context
 }
