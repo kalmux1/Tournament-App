@@ -5,8 +5,9 @@ export const TOURNAMENT = {
   year: 2026,
   dates: "September 27 - October 3, 2026",
   venue: "IMRT Basketball Court Near Divine Bliss",
-  city: "New Delhi, India",
-  tipOff: "2026-09-27T09:00:00"
+  city: "Lucknow, India",
+  tipOff: "2026-09-27T09:00:00",
+  contactEmail: "kal.mux.cyber@gmail.com"
 }
 
 export const mockTeams: Team[] = [

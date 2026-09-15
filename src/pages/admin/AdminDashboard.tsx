@@ -1,11 +1,15 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useData } from "@/context/DataContext"
+import { useAuth } from "@/context/AuthContext"
 import { 
   Shield, Users, Calendar, Trophy, CheckCircle, XCircle, Plus, Trash2, 
-  MapPin, Activity, Settings, UserCheck, Award, Clock, ArrowUpRight, BarChart3, AlertCircle
+  MapPin, Activity, Settings, UserCheck, Award, Clock, ArrowUpRight, BarChart3, AlertCircle, ArrowLeft, LogOut
 } from "lucide-react"
 
 export default function AdminDashboard() {
+  const navigate = useNavigate()
+  const { logout } = useAuth()
   const { teams, matches, scorers, tournament, updateTeamStatus, addMatch, deleteMatch, addScorer, deleteScorer, updateTournamentSettings } = useData()
   const [activeTab, setActiveTab] = useState<"overview" | "teams" | "schedule" | "scorers" | "tournament">("overview")
 
@@ -78,6 +82,11 @@ export default function AdminDashboard() {
     setTimeout(() => setSavedMsg(false), 3000)
   }
 
+  const handleLogout = async () => {
+    await logout()
+    navigate("/")
+  }
+
   const approvedTeamsCount = teams.filter(t => t.approved).length
   const pendingTeamsCount = teams.filter(t => !t.approved).length
   const liveMatchesCount = matches.filter(m => m.status === "live").length
@@ -89,10 +98,12 @@ export default function AdminDashboard() {
         <div className="court-lines absolute inset-0 opacity-20" />
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-gold-500/10 px-3.5 py-1 text-xs font-semibold uppercase tracking-widest text-gold-500 border border-gold-500/30">
-              <Shield className="h-3.5 w-3.5" /> Admin Control Center
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="inline-flex items-center gap-2 rounded-full bg-gold-500/10 px-3.5 py-1 text-xs font-semibold uppercase tracking-widest text-gold-500 border border-gold-500/30">
+                <Shield className="h-3.5 w-3.5" /> Admin Control Center
+              </span>
             </div>
-            <h1 className="mt-3 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            <h1 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Tournament Administration
             </h1>
             <p className="mt-1 text-sm text-slate-300">
@@ -101,14 +112,18 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="glass px-4 py-2.5 rounded-2xl border border-white/10 text-right">
-              <div className="text-xs text-slate-400">Venue</div>
-              <div className="text-xs font-semibold text-gold-400">{tournament.venue.split(",")[0]}</div>
-            </div>
-            <div className="glass px-4 py-2.5 rounded-2xl border border-white/10 text-right">
-              <div className="text-xs text-slate-400">Dates</div>
-              <div className="text-xs font-semibold text-white">{tournament.dates}</div>
-            </div>
+            <button
+              onClick={() => navigate("/")}
+              className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-semibold text-white hover:bg-white/20 transition border border-white/10"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to Home
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 rounded-xl bg-red-500/20 px-4 py-2.5 text-xs font-semibold text-red-400 hover:bg-red-500/30 transition border border-red-500/30"
+            >
+              <LogOut className="h-4 w-4" /> Logout
+            </button>
           </div>
         </div>
       </div>
