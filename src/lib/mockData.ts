@@ -1,4 +1,4 @@
-import type { Team, Match, Scorer } from "./types"
+import type { Team, Match, Scorer, PlayerStat } from "./types"
 
 export const TOURNAMENT = {
   name: "IMRT 3x3 Basketball Championship",
@@ -7,7 +7,7 @@ export const TOURNAMENT = {
   venue: "IMRT Basketball Court Near Divine Bliss",
   city: "Lucknow, India",
   tipOff: "2026-09-27T09:00:00",
-  contactEmail: "kal.mux.cyber@gmail.com"
+  contactEmail: "kal.mux.cyber@gmail.com",
 }
 
 export const mockTeams: Team[] = [
@@ -22,19 +22,19 @@ export const mockTeams: Team[] = [
       name: "Rahul Verma",
       email: "rahul@imrt.edu",
       phone: "+91 98765 43210",
-      studentId: "IMRT-2024-001"
+      studentId: "IMRT-2024-001",
     },
     roster: [
-      { name: "Rahul Verma", jersey: 7, height: "6'2\"", role: "Guard", isSub: false },
-      { name: "Aditya Singh", jersey: 11, height: "6'5\"", role: "Forward", isSub: false },
-      { name: "Karan Mehta", jersey: 23, height: "6'7\"", role: "Center", isSub: false },
-      { name: "Sameer Roy", jersey: 4, height: "6'0\"", role: "Wing", isSub: true }
+      { name: "Rahul Verma", jersey: 7, height: "6'2\"", role: "Guard" },
+      { name: "Aditya Singh", jersey: 11, height: "6'5\"", role: "Forward" },
+      { name: "Karan Mehta", jersey: 23, height: "6'7\"", role: "Center" },
+      { name: "Sameer Roy", jersey: 4, height: "6'0\"", role: "Wing", isSub: true },
     ],
     wins: 2,
     losses: 0,
     pointsFor: 42,
     pointsAgainst: 31,
-    approved: true
+    approved: true,
   },
   {
     id: "team_2",
@@ -47,19 +47,19 @@ export const mockTeams: Team[] = [
       name: "Vikram Nair",
       email: "vikram@imrt.edu",
       phone: "+91 98765 43211",
-      studentId: "IMRT-2024-002"
+      studentId: "IMRT-2024-002",
     },
     roster: [
-      { name: "Vikram Nair", jersey: 5, height: "6'1\"", role: "Guard", isSub: false },
-      { name: "Dev Patel", jersey: 14, height: "6'4\"", role: "Forward", isSub: false },
-      { name: "Arjun Das", jersey: 32, height: "6'6\"", role: "Center", isSub: false },
-      { name: "Neel Kapoor", jersey: 9, height: "5'11\"", role: "Wing", isSub: true }
+      { name: "Vikram Nair", jersey: 5, height: "6'1\"", role: "Guard" },
+      { name: "Dev Patel", jersey: 14, height: "6'4\"", role: "Forward" },
+      { name: "Arjun Das", jersey: 32, height: "6'6\"", role: "Center" },
+      { name: "Neel Kapoor", jersey: 9, height: "5'11\"", role: "Wing", isSub: true },
     ],
     wins: 1,
     losses: 1,
     pointsFor: 35,
     pointsAgainst: 33,
-    approved: true
+    approved: true,
   },
   {
     id: "team_3",
@@ -72,18 +72,18 @@ export const mockTeams: Team[] = [
       name: "Aarav Sharma",
       email: "aarav@imrt.edu",
       phone: "+91 98765 43212",
-      studentId: "IMRT-2024-003"
+      studentId: "IMRT-2024-003",
     },
     roster: [
-      { name: "Aarav Sharma", jersey: 10, height: "6'3\"", role: "Guard", isSub: false },
-      { name: "Rohan Gupta", jersey: 21, height: "6'6\"", role: "Forward", isSub: false },
-      { name: "Kabir Sen", jersey: 33, height: "6'8\"", role: "Center", isSub: false }
+      { name: "Aarav Sharma", jersey: 10, height: "6'3\"", role: "Guard" },
+      { name: "Rohan Gupta", jersey: 21, height: "6'6\"", role: "Forward" },
+      { name: "Kabir Sen", jersey: 33, height: "6'8\"", role: "Center" },
     ],
     wins: 2,
     losses: 0,
     pointsFor: 44,
     pointsAgainst: 28,
-    approved: true
+    approved: true,
   },
   {
     id: "team_4",
@@ -96,18 +96,18 @@ export const mockTeams: Team[] = [
       name: "Tanmay Joshi",
       email: "tanmay@imrt.edu",
       phone: "+91 98765 43213",
-      studentId: "IMRT-2024-004"
+      studentId: "IMRT-2024-004",
     },
     roster: [
-      { name: "Tanmay Joshi", jersey: 3, height: "6'0\"", role: "Guard", isSub: false },
-      { name: "Siddharth Rao", jersey: 8, height: "6'3\"", role: "Forward", isSub: false },
-      { name: "Manish Kumar", jersey: 15, height: "6'5\"", role: "Center", isSub: false }
+      { name: "Tanmay Joshi", jersey: 3, height: "6'0\"", role: "Guard" },
+      { name: "Siddharth Rao", jersey: 8, height: "6'3\"", role: "Forward" },
+      { name: "Manish Kumar", jersey: 15, height: "6'5\"", role: "Center" },
     ],
     wins: 0,
     losses: 2,
     pointsFor: 25,
     pointsAgainst: 40,
-    approved: true
+    approved: true,
   },
   {
     id: "team_5",
@@ -120,18 +120,18 @@ export const mockTeams: Team[] = [
       name: "Ananya Iyer",
       email: "ananya@imrt.edu",
       phone: "+91 98765 43214",
-      studentId: "IMRT-2024-005"
+      studentId: "IMRT-2024-005",
     },
     roster: [
-      { name: "Ananya Iyer", jersey: 2, height: "5'8\"", role: "Guard", isSub: false },
-      { name: "Priya Sen", jersey: 12, height: "5'10\"", role: "Forward", isSub: false },
-      { name: "Diya Patel", jersey: 24, height: "6'1\"", role: "Center", isSub: false }
+      { name: "Ananya Iyer", jersey: 2, height: "5'8\"", role: "Guard" },
+      { name: "Priya Sen", jersey: 12, height: "5'10\"", role: "Forward" },
+      { name: "Diya Patel", jersey: 24, height: "6'1\"", role: "Center" },
     ],
     wins: 2,
     losses: 0,
     pointsFor: 38,
     pointsAgainst: 22,
-    approved: true
+    approved: true,
   },
   {
     id: "team_6",
@@ -144,19 +144,19 @@ export const mockTeams: Team[] = [
       name: "Sneha Reddy",
       email: "sneha@imrt.edu",
       phone: "+91 98765 43215",
-      studentId: "IMRT-2024-006"
+      studentId: "IMRT-2024-006",
     },
     roster: [
-      { name: "Sneha Reddy", jersey: 6, height: "5'7\"", role: "Guard", isSub: false },
-      { name: "Meera Nair", jersey: 13, height: "5'9\"", role: "Forward", isSub: false },
-      { name: "Ritu Sharma", jersey: 22, height: "6'0\"", role: "Center", isSub: false }
+      { name: "Sneha Reddy", jersey: 6, height: "5'7\"", role: "Guard" },
+      { name: "Meera Nair", jersey: 13, height: "5'9\"", role: "Forward" },
+      { name: "Ritu Sharma", jersey: 22, height: "6'0\"", role: "Center" },
     ],
     wins: 0,
     losses: 2,
     pointsFor: 20,
     pointsAgainst: 36,
-    approved: true
-  }
+    approved: true,
+  },
 ]
 
 export const mockMatches: Match[] = [
@@ -168,11 +168,14 @@ export const mockMatches: Match[] = [
     teamBId: "team_2",
     scoreA: 21,
     scoreB: 18,
-    status: "completed" as any,
+    status: "finished",
     time: "09:30 AM",
     date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
+    stage: "pool",
+    pool: "A",
+    winnerId: "team_1",
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India",
   },
   {
     id: "m_2",
@@ -182,11 +185,14 @@ export const mockMatches: Match[] = [
     teamBId: "team_4",
     scoreA: 21,
     scoreB: 14,
-    status: "completed" as any,
+    status: "finished",
     time: "10:15 AM",
     date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
+    stage: "pool",
+    pool: "B",
+    winnerId: "team_3",
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India",
   },
   {
     id: "m_3",
@@ -196,11 +202,14 @@ export const mockMatches: Match[] = [
     teamBId: "team_6",
     scoreA: 19,
     scoreB: 11,
-    status: "completed" as any,
+    status: "finished",
     time: "11:00 AM",
     date: "2026-09-27",
     round: "Pool Stage",
-    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
+    stage: "pool",
+    pool: "A",
+    winnerId: "team_5",
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India",
   },
   {
     id: "m_4",
@@ -214,7 +223,8 @@ export const mockMatches: Match[] = [
     time: "11:45 AM",
     date: "2026-09-27",
     round: "Quarterfinals",
-    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
+    stage: "quarterfinal",
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India",
   },
   {
     id: "m_5",
@@ -228,8 +238,9 @@ export const mockMatches: Match[] = [
     time: "12:30 PM",
     date: "2026-09-28",
     round: "Semifinals",
-    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India"
-  }
+    stage: "semifinal",
+    venue: "IMRT Basketball Court Near Divine Bliss, Lucknow, India",
+  },
 ]
 
 export const mockScorers: Scorer[] = [
@@ -239,7 +250,7 @@ export const mockScorers: Scorer[] = [
     email: "scorer@imrt.in",
     phone: "+91 99999 88888",
     assignedCourt: "Court 1 (Main Arena)",
-    active: true
+    active: true,
   },
   {
     id: "scr_2",
@@ -247,6 +258,14 @@ export const mockScorers: Scorer[] = [
     email: "assistant@imrt.in",
     phone: "+91 99999 77777",
     assignedCourt: "Court 2",
-    active: true
-  }
+    active: true,
+  },
+]
+
+export const mockPlayerStats: PlayerStat[] = [
+  { id: "ps_1", playerName: "Rahul Verma", teamId: "team_1", points: 28, games: 3 },
+  { id: "ps_2", playerName: "Aarav Sharma", teamId: "team_3", points: 26, games: 3 },
+  { id: "ps_3", playerName: "Ananya Iyer", teamId: "team_5", points: 22, games: 2 },
+  { id: "ps_4", playerName: "Vikram Nair", teamId: "team_2", points: 19, games: 3 },
+  { id: "ps_5", playerName: "Dev Patel", teamId: "team_2", points: 15, games: 3 },
 ]

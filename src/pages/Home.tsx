@@ -6,18 +6,24 @@ import TeamLogo from "@/components/TeamLogo"
 import { useData } from "@/context/DataContext"
 
 export default function Home() {
-  const { matches, teams, scorers, getTeam, tournament } = useData()
+  const { matches, teams, playerStats, getTeam, tournament } = useData()
   const live = matches.filter((m) => m.status === "live")
   const upcoming = matches.filter((m) => m.status === "upcoming").slice(0, 3)
   const featured = live.length ? live : upcoming.slice(0, 3)
-  const topScorer = scorers[0] // or computed from players
+  const topScorer = playerStats.length
+    ? [...playerStats].sort((a, b) => b.points - a.points)[0]
+    : undefined
 
   return (
     <div>
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
-          <img src="https://images.pexels.com/photos/1752757/pexels-photo-1752757.jpeg?auto=compress&cs=tinysrgb&w=1920" alt="" className="h-full w-full object-cover opacity-40" />
+          <img
+            src="https://images.pexels.com/photos/1752757/pexels-photo-1752757.jpeg?auto=compress&cs=tinysrgb&w=1920"
+            alt=""
+            className="h-full w-full object-cover opacity-40"
+          />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/40" />
           <div className="absolute inset-0 bg-gradient-to-r from-maroon-900/60 to-transparent" />
         </div>
@@ -31,7 +37,8 @@ export default function Home() {
               {tournament.name.split(" ")[0]} 3x3 <span className="text-gold-500">Basketball</span> 2026
             </h1>
             <p className="mt-5 max-w-xl text-lg text-slate-300">
-              Seven days of high-intensity half-court action under official FIBA 3x3 rules at {tournament.venue}. Register your squad and chase the crown.
+              Seven days of high-intensity half-court action under official FIBA 3x3 rules at{" "}
+              {tournament.venue}. Register your squad and chase the crown.
             </p>
 
             <div className="mt-7 flex flex-wrap gap-4 text-sm">
@@ -56,7 +63,9 @@ export default function Home() {
             </div>
 
             <div className="mt-10">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Tournament Tip-off In</p>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Tournament Tip-off In
+              </p>
               <Countdown target={tournament.tipOff} />
             </div>
           </div>
@@ -70,11 +79,13 @@ export default function Home() {
             { label: "Registered Teams", value: teams.length },
             { label: "Matches Scheduled", value: matches.length },
             { label: "Pools", value: new Set(teams.map((t) => t.pool)).size },
-            { label: "Categories", value: 3 },
+            { label: "Categories", value: 5 },
           ].map((s) => (
             <div key={s.label} className="py-6 text-center">
               <div className="font-display text-4xl font-bold text-gold-500">{s.value}</div>
-              <div className="mt-1 text-xs font-medium uppercase tracking-wider text-slate-400">{s.label}</div>
+              <div className="mt-1 text-xs font-medium uppercase tracking-wider text-slate-400">
+                {s.label}
+              </div>
             </div>
           ))}
         </div>
@@ -86,17 +97,26 @@ export default function Home() {
           <div className="flex items-end justify-between">
             <div>
               <h2 className="font-display text-3xl font-bold text-white sm:text-4xl">Match Center</h2>
-              <p className="mt-1 text-sm text-slate-400">Live games and the next tip-offs on every court.</p>
+              <p className="mt-1 text-sm text-slate-400">
+                Live games and the next tip-offs on every court.
+              </p>
             </div>
-            <Link to="/hub" className="hidden items-center gap-1 text-sm font-semibold text-gold-500 hover:underline sm:flex">
+            <Link
+              to="/hub"
+              className="hidden items-center gap-1 text-sm font-semibold text-gold-500 hover:underline sm:flex"
+            >
               View all <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
           <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {featured.map((m) => (
-              <MatchCard key={m.id} match={m} />
-            ))}
+            {featured.length === 0 ? (
+              <p className="col-span-full rounded-xl border border-white/10 bg-white/5 px-6 py-10 text-center text-sm text-slate-400">
+                No matches scheduled yet. Check back soon.
+              </p>
+            ) : (
+              featured.map((m) => <MatchCard key={m.id} match={m} />)
+            )}
           </div>
         </div>
       </section>
@@ -104,37 +124,49 @@ export default function Home() {
       {/* Highlight row */}
       <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
         <div className="grid gap-6 lg:grid-cols-3">
-          {topScorer && (
-            <div className="glass relative overflow-hidden rounded-2xl p-6">
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-500">MVP Race Leader</span>
-              <div className="mt-4 flex items-center gap-4">
-                <TeamLogo team={getTeam(topScorer.teamId)!} size="lg" />
-                <div>
-                  <div className="font-display text-2xl font-bold text-white">{topScorer.playerName}</div>
-                  <div className="text-sm text-slate-400">{getTeam(topScorer.teamId)?.name}</div>
-                </div>
-              </div>
-              <div className="mt-5 flex gap-6">
-                <div>
-                  <div className="font-display text-3xl font-bold text-gold-500">{topScorer.points}</div>
-                  <div className="text-xs uppercase tracking-wider text-slate-400">Total Pts</div>
-                </div>
-                <div>
-                  <div className="font-display text-3xl font-bold text-white">
-                    {(topScorer.points / topScorer.games).toFixed(1)}
+          {topScorer &&
+            (() => {
+              const team = getTeam(topScorer.teamId)
+              const ppg = topScorer.games > 0 ? topScorer.points / topScorer.games : 0
+              return (
+                <div className="glass relative overflow-hidden rounded-2xl p-6">
+                  <span className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-500">
+                    MVP Race Leader
+                  </span>
+                  <div className="mt-4 flex items-center gap-4">
+                    <TeamLogo team={team ?? null} size="lg" />
+                    <div>
+                      <div className="font-display text-2xl font-bold text-white">
+                        {topScorer.playerName}
+                      </div>
+                      <div className="text-sm text-slate-400">{team?.name ?? "TBD"}</div>
+                    </div>
                   </div>
-                  <div className="text-xs uppercase tracking-wider text-slate-400">PPG</div>
+                  <div className="mt-5 flex gap-6">
+                    <div>
+                      <div className="font-display text-3xl font-bold text-gold-500">
+                        {topScorer.points}
+                      </div>
+                      <div className="text-xs uppercase tracking-wider text-slate-400">Total Pts</div>
+                    </div>
+                    <div>
+                      <div className="font-display text-3xl font-bold text-white">
+                        {ppg.toFixed(1)}
+                      </div>
+                      <div className="text-xs uppercase tracking-wider text-slate-400">PPG</div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )
+            })()}
 
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-maroon-700 to-maroon-900 p-6 lg:col-span-2">
             <div className="court-lines absolute inset-0 opacity-40" />
             <div className="relative">
               <h3 className="font-display text-3xl font-bold text-white">Your squad. The big stage.</h3>
               <p className="mt-2 max-w-md text-sm text-white/80">
-                Rally three starters and a reserve, pick your category, and lock your spot in the championship bracket at {tournament.venue}.
+                Rally three starters and a reserve, pick your category, and lock your spot in the
+                championship bracket at {tournament.venue}.
               </p>
               <Link to="/register" className="btn-gold mt-6">
                 Register Now <ArrowRight className="h-4 w-4" />

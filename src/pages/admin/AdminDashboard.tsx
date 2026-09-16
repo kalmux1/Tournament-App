@@ -2,20 +2,58 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useData } from "@/context/DataContext"
 import { useAuth } from "@/context/AuthContext"
-import { 
-  Shield, Users, Calendar, Trophy, CheckCircle, XCircle, Plus, Trash2, 
-  MapPin, Activity, Settings, UserCheck, Award, Clock, ArrowUpRight, BarChart3, AlertCircle, ArrowLeft, LogOut
+import type { Category, Match } from "@/lib/types"
+import {
+  Shield,
+  Users,
+  Calendar,
+  Trophy,
+  CheckCircle,
+  XCircle,
+  Plus,
+  Trash2,
+  MapPin,
+  Activity,
+  Settings,
+  UserCheck,
+  Clock,
+  BarChart3,
+  AlertCircle,
+  ArrowLeft,
+  LogOut,
 } from "lucide-react"
+
+const CATEGORY_OPTIONS: Category[] = [
+  "Men's Open",
+  "Women's Open",
+  "Under-19 Boys",
+  "Under-19 Girls",
+  "Inter-Department",
+]
+
+type AdminTab = "overview" | "teams" | "schedule" | "scorers" | "tournament"
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { logout } = useAuth()
-  const { teams, matches, scorers, tournament, updateTeamStatus, addMatch, deleteMatch, addScorer, deleteScorer, updateTournamentSettings } = useData()
-  const [activeTab, setActiveTab] = useState<"overview" | "teams" | "schedule" | "scorers" | "tournament">("overview")
+  const {
+    teams,
+    matches,
+    scorers,
+    tournament,
+    updateTeamStatus,
+    addMatch,
+    deleteMatch,
+    addScorer,
+    deleteScorer,
+    updateTournamentSettings,
+  } = useData()
+
+  const [activeTab, setActiveTab] = useState<AdminTab>("overview")
 
   // New match form state
   const [newCourt, setNewCourt] = useState("Court 1 (Main Arena)")
-  const [newCategory, setNewCategory] = useState("Men's Open")
+  const [newCategory, setNewCategory] = useState<Category>("Men's Open")
   const [newTeamA, setNewTeamA] = useState("")
   const [newTeamB, setNewTeamB] = useState("")
   const [newTime, setNewTime] = useState("10:00 AM")
@@ -37,7 +75,19 @@ export default function AdminDashboard() {
 
   const handleCreateMatch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newTeamA || !newTeamB) return
+    if (!newTeamA || !newTeamB || newTeamA === newTeamB) return
+
+    // Derive stage + pool from the round label so Bracket/Schedule filters work.
+    const roundLower = newRound.toLowerCase()
+    let stage: Match["stage"] = "pool"
+    if (roundLower.includes("quarter")) stage = "quarterfinal"
+    else if (roundLower.includes("semi")) stage = "semifinal"
+    else if (roundLower.includes("third") || roundLower.includes("3rd")) stage = "third"
+    else if (roundLower.includes("final")) stage = "final"
+
+    const teamA = teams.find((t) => t.id === newTeamA)
+    const pool = stage === "pool" ? teamA?.pool : undefined
+
     addMatch({
       court: newCourt,
       category: newCategory,
@@ -49,7 +99,9 @@ export default function AdminDashboard() {
       time: newTime,
       date: newDate,
       round: newRound,
-      venue: tVenue
+      stage,
+      pool,
+      venue: tVenue,
     })
     setNewTeamA("")
     setNewTeamB("")
@@ -63,7 +115,7 @@ export default function AdminDashboard() {
       email: scrEmail,
       phone: scrPhone,
       assignedCourt: scrCourt,
-      active: true
+      active: true,
     })
     setScrName("")
     setScrEmail("")
@@ -76,7 +128,7 @@ export default function AdminDashboard() {
       name: tName,
       dates: tDates,
       venue: tVenue,
-      tipOff: tTipOff
+      tipOff: tTipOff,
     })
     setSavedMsg(true)
     setTimeout(() => setSavedMsg(false), 3000)
@@ -87,9 +139,9 @@ export default function AdminDashboard() {
     navigate("/")
   }
 
-  const approvedTeamsCount = teams.filter(t => t.approved).length
-  const pendingTeamsCount = teams.filter(t => !t.approved).length
-  const liveMatchesCount = matches.filter(m => m.status === "live").length
+  const approvedTeamsCount = teams.filter((t) => t.approved).length
+  const pendingTeamsCount = teams.filter((t) => !t.approved).length
+  const liveMatchesCount = matches.filter((m) => m.status === "live").length
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -107,7 +159,8 @@ export default function AdminDashboard() {
               Tournament Administration
             </h1>
             <p className="mt-1 text-sm text-slate-300">
-              Manage team approvals, schedule matches, assign referees, and configure championship timing.
+              Manage team approvals, schedule matches, assign referees, and configure championship
+              timing.
             </p>
           </div>
 
@@ -131,21 +184,26 @@ export default function AdminDashboard() {
       {/* Navigation Tabs */}
       <div className="mt-8 flex flex-wrap gap-2 border-b border-white/10 pb-4">
         {[
-          { id: "overview", label: "Overview", icon: BarChart3 },
-          { id: "teams", label: `Teams (${teams.length})`, icon: Users, badge: pendingTeamsCount > 0 ? pendingTeamsCount : undefined },
-          { id: "schedule", label: `Matches (${matches.length})`, icon: Calendar },
-          { id: "scorers", label: `Scorers (${scorers.length})`, icon: UserCheck },
-          { id: "tournament", label: "Schedule & Venue", icon: Settings },
+          { id: "overview" as const, label: "Overview", icon: BarChart3 },
+          {
+            id: "teams" as const,
+            label: `Teams (${teams.length})`,
+            icon: Users,
+            badge: pendingTeamsCount > 0 ? pendingTeamsCount : undefined,
+          },
+          { id: "schedule" as const, label: `Matches (${matches.length})`, icon: Calendar },
+          { id: "scorers" as const, label: `Scorers (${scorers.length})`, icon: UserCheck },
+          { id: "tournament" as const, label: "Schedule & Venue", icon: Settings },
         ].map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`relative flex items-center gap-2 rounded-xl px-5 py-3 font-display text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
-                isActive 
-                  ? "bg-gold-500 text-slate-950 shadow-lg shadow-gold-500/20" 
+                isActive
+                  ? "bg-gold-500 text-slate-950 shadow-lg shadow-gold-500/20"
                   : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white border border-white/5"
               }`}
             >
@@ -164,13 +222,14 @@ export default function AdminDashboard() {
       {/* OVERVIEW TAB */}
       {activeTab === "overview" && (
         <div className="mt-8 space-y-8 animate-fadeIn">
-          {/* Stats Grid */}
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             <div className="glass rounded-2xl p-6 border border-white/10 relative overflow-hidden">
               <div className="absolute right-4 top-4 rounded-2xl bg-gold-500/10 p-3 text-gold-500">
                 <Users className="h-6 w-6" />
               </div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Teams</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Total Teams
+              </p>
               <h3 className="mt-2 font-display text-4xl font-bold text-white">{teams.length}</h3>
               <p className="mt-2 text-xs text-emerald-400 flex items-center gap-1">
                 <CheckCircle className="h-3.5 w-3.5" /> {approvedTeamsCount} approved squads
@@ -181,7 +240,9 @@ export default function AdminDashboard() {
               <div className="absolute right-4 top-4 rounded-2xl bg-blue-500/10 p-3 text-blue-400">
                 <Calendar className="h-6 w-6" />
               </div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Matches Scheduled</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Matches Scheduled
+              </p>
               <h3 className="mt-2 font-display text-4xl font-bold text-white">{matches.length}</h3>
               <p className="mt-2 text-xs text-blue-400 flex items-center gap-1">
                 <Activity className="h-3.5 w-3.5" /> {liveMatchesCount} currently live
@@ -192,7 +253,9 @@ export default function AdminDashboard() {
               <div className="absolute right-4 top-4 rounded-2xl bg-amber-500/10 p-3 text-amber-400">
                 <UserCheck className="h-6 w-6" />
               </div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Official Scorers</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Official Scorers
+              </p>
               <h3 className="mt-2 font-display text-4xl font-bold text-white">{scorers.length}</h3>
               <p className="mt-2 text-xs text-amber-400">Assigned across courts</p>
             </div>
@@ -201,44 +264,58 @@ export default function AdminDashboard() {
               <div className="absolute right-4 top-4 rounded-2xl bg-purple-500/10 p-3 text-purple-400">
                 <Trophy className="h-6 w-6" />
               </div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Championship Status</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Championship Status
+              </p>
               <h3 className="mt-2 font-display text-2xl font-bold text-white">Active</h3>
               <p className="mt-2 text-xs text-purple-400">FIBA 3x3 Standard Rules</p>
             </div>
           </div>
 
-          {/* Quick Actions & Pending Approvals Summary */}
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10">
               <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 text-gold-500" /> Pending Team Approvals
               </h3>
-              <p className="mt-1 text-sm text-slate-400">Review newly registered teams awaiting verification.</p>
+              <p className="mt-1 text-sm text-slate-400">
+                Review newly registered teams awaiting verification.
+              </p>
 
               <div className="mt-6 space-y-3">
-                {teams.filter(t => !t.approved).length === 0 ? (
+                {pendingTeamsCount === 0 ? (
                   <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center text-slate-400">
                     <CheckCircle className="mx-auto h-8 w-8 text-emerald-400 mb-2" />
                     All registered teams have been approved!
                   </div>
                 ) : (
-                  teams.filter(t => !t.approved).map((team) => (
-                    <div key={team.id} className="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-4 transition hover:bg-white/10">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-gold-400">{team.code}</span>
-                          <span className="font-display text-lg font-bold text-white">{team.name}</span>
-                        </div>
-                        <p className="text-xs text-slate-400">{team.category} • Captain: {team.captain.name}</p>
-                      </div>
-                      <button
-                        onClick={() => updateTeamStatus(team.id, true)}
-                        className="rounded-xl bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/30 transition flex items-center gap-1.5"
+                  teams
+                    .filter((t) => !t.approved)
+                    .map((team) => (
+                      <div
+                        key={team.id}
+                        className="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-4 transition hover:bg-white/10"
                       >
-                        <CheckCircle className="h-4 w-4" /> Approve
-                      </button>
-                    </div>
-                  ))
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-gold-400">
+                              {team.code}
+                            </span>
+                            <span className="font-display text-lg font-bold text-white">
+                              {team.name}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            {team.category} • Captain: {team.captain.name}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => updateTeamStatus(team.id, true)}
+                          className="rounded-xl bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/30 transition flex items-center gap-1.5"
+                        >
+                          <CheckCircle className="h-4 w-4" /> Approve
+                        </button>
+                      </div>
+                    ))
                 )}
               </div>
             </div>
@@ -250,28 +327,43 @@ export default function AdminDashboard() {
               <p className="mt-1 text-sm text-slate-400">Quick status of court activities.</p>
 
               <div className="mt-6 space-y-3">
-                {matches.slice(0, 3).map((m) => {
-                  const teamA = teams.find(t => t.id === m.teamAId)
-                  const teamB = teams.find(t => t.id === m.teamBId)
-                  return (
-                    <div key={m.id} className="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-4">
-                      <div>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
-                          <span>{m.court}</span>
-                          <span className={`uppercase font-semibold ${m.status === 'live' ? 'text-red-400 animate-pulse' : 'text-gold-400'}`}>
-                            • {m.status}
-                          </span>
+                {matches.length === 0 ? (
+                  <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center text-slate-400 text-sm">
+                    No matches scheduled yet.
+                  </div>
+                ) : (
+                  matches.slice(0, 3).map((m) => {
+                    const teamA = teams.find((t) => t.id === m.teamAId)
+                    const teamB = teams.find((t) => t.id === m.teamBId)
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-4"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <span>{m.court}</span>
+                            <span
+                              className={`uppercase font-semibold ${
+                                m.status === "live"
+                                  ? "text-red-400 animate-pulse"
+                                  : "text-gold-400"
+                              }`}
+                            >
+                              • {m.status}
+                            </span>
+                          </div>
+                          <div className="mt-1 font-display font-bold text-white">
+                            {teamA?.name || "TBD"} vs {teamB?.name || "TBD"}
+                          </div>
                         </div>
-                        <div className="mt-1 font-display font-bold text-white">
-                          {teamA?.name || "TBD"} vs {teamB?.name || "TBD"}
+                        <div className="text-right font-display text-lg font-bold text-gold-400">
+                          {m.scoreA} - {m.scoreB}
                         </div>
                       </div>
-                      <div className="text-right font-display text-lg font-bold text-gold-400">
-                        {m.scoreA} - {m.scoreB}
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -283,31 +375,45 @@ export default function AdminDashboard() {
         <div className="mt-8 space-y-6 animate-fadeIn">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="font-display text-2xl font-bold text-white">Registered Teams & Squad Management</h2>
-              <p className="text-sm text-slate-400">Approve or revoke tournament access for registered squads.</p>
+              <h2 className="font-display text-2xl font-bold text-white">
+                Registered Teams & Squad Management
+              </h2>
+              <p className="text-sm text-slate-400">
+                Approve or revoke tournament access for registered squads.
+              </p>
             </div>
             <div className="text-xs text-slate-400">
-              Total: <span className="text-white font-bold">{teams.length}</span> | Approved: <span className="text-emerald-400 font-bold">{approvedTeamsCount}</span>
+              Total: <span className="text-white font-bold">{teams.length}</span> | Approved:{" "}
+              <span className="text-emerald-400 font-bold">{approvedTeamsCount}</span>
             </div>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {teams.map((team) => (
-              <div key={team.id} className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between transition hover:border-gold-500/40">
+              <div
+                key={team.id}
+                className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between transition hover:border-gold-500/40"
+              >
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="rounded-lg bg-gold-500/10 px-2.5 py-1 text-xs font-mono font-bold text-gold-400 border border-gold-500/30">
                       {team.code}
                     </span>
-                    <span className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${
-                      team.approved ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                    }`}>
+                    <span
+                      className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                        team.approved
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                      }`}
+                    >
                       {team.approved ? "Approved" : "Pending Review"}
                     </span>
                   </div>
 
                   <h3 className="mt-4 font-display text-2xl font-bold text-white">{team.name}</h3>
-                  <p className="text-xs text-gold-400 font-medium mt-0.5">{team.category} • Pool {team.pool}</p>
+                  <p className="text-xs text-gold-400 font-medium mt-0.5">
+                    {team.category} • Pool {team.pool}
+                  </p>
 
                   <div className="mt-5 rounded-2xl bg-white/5 border border-white/10 p-4 text-xs text-slate-300 space-y-2">
                     <div className="flex justify-between">
@@ -324,7 +430,9 @@ export default function AdminDashboard() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400">Squad Roster:</span>
-                      <span className="text-gold-400 font-bold">{team.roster.length} Players</span>
+                      <span className="text-gold-400 font-bold">
+                        {team.roster.length} Players
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -359,11 +467,18 @@ export default function AdminDashboard() {
             <h2 className="font-display text-2xl font-bold text-white mb-2 flex items-center gap-2">
               <Plus className="h-6 w-6 text-gold-500" /> Schedule New Tournament Match
             </h2>
-            <p className="text-sm text-slate-400 mb-6">Create fixtures across courts for pool stages or knockout rounds.</p>
+            <p className="text-sm text-slate-400 mb-6">
+              Create fixtures across courts for pool stages or knockout rounds.
+            </p>
 
-            <form onSubmit={handleCreateMatch} className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <form
+              onSubmit={handleCreateMatch}
+              className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"
+            >
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Court Location</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Court Location
+                </label>
                 <input
                   type="text"
                   value={newCourt}
@@ -377,13 +492,14 @@ export default function AdminDashboard() {
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">Category</label>
                 <select
                   value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
+                  onChange={(e) => setNewCategory(e.target.value as Category)}
                   className="w-full rounded-2xl bg-slate-900 border border-white/15 px-4 py-3 text-sm text-white focus:border-gold-500 focus:outline-none"
                 >
-                  <option value="Men's Open">Men's Open</option>
-                  <option value="Women's Open">Women's Open</option>
-                  <option value="U-19 Boys">U-19 Boys</option>
-                  <option value="U-19 Girls">U-19 Girls</option>
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -397,7 +513,9 @@ export default function AdminDashboard() {
                 >
                   <option value="">Select Team A</option>
                   {teams.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.category})
+                    </option>
                   ))}
                 </select>
               </div>
@@ -411,9 +529,13 @@ export default function AdminDashboard() {
                   required
                 >
                   <option value="">Select Team B</option>
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                  ))}
+                  {teams
+                    .filter((t) => t.id !== newTeamA)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.category})
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -429,7 +551,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Tip-off Time</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Tip-off Time
+                </label>
                 <input
                   type="text"
                   value={newTime}
@@ -441,7 +565,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Round Stage</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Round Stage
+                </label>
                 <input
                   type="text"
                   value={newRound}
@@ -453,24 +579,39 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex items-end">
-                <button type="submit" className="w-full btn-gold py-3">Schedule Match</button>
+                <button type="submit" className="w-full btn-gold py-3">
+                  Schedule Match
+                </button>
               </div>
             </form>
           </div>
 
-          <h3 className="font-display text-2xl font-bold text-white">Scheduled Matches ({matches.length})</h3>
+          <h3 className="font-display text-2xl font-bold text-white">
+            Scheduled Matches ({matches.length})
+          </h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {matches.map((m) => {
               const teamA = teams.find((t) => t.id === m.teamAId)
               const teamB = teams.find((t) => t.id === m.teamBId)
               return (
-                <div key={m.id} className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between">
+                <div
+                  key={m.id}
+                  className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between"
+                >
                   <div>
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-gold-500" /> {m.court}</span>
-                      <span className={`uppercase font-semibold px-2 py-0.5 rounded text-[10px] ${
-                        m.status === 'live' ? 'bg-red-500/20 text-red-400' : 'bg-gold-500/10 text-gold-400'
-                      }`}>{m.status}</span>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-gold-500" /> {m.court}
+                      </span>
+                      <span
+                        className={`uppercase font-semibold px-2 py-0.5 rounded text-[10px] ${
+                          m.status === "live"
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-gold-500/10 text-gold-400"
+                        }`}
+                      >
+                        {m.status}
+                      </span>
                     </div>
 
                     <div className="mt-4 font-display text-lg font-bold text-white">
@@ -482,7 +623,9 @@ export default function AdminDashboard() {
 
                     <div className="mt-4 rounded-xl bg-white/5 p-3 flex justify-between items-center text-sm font-bold text-gold-400">
                       <span>Score</span>
-                      <span>{m.scoreA} - {m.scoreB}</span>
+                      <span>
+                        {m.scoreA} - {m.scoreB}
+                      </span>
                     </div>
                   </div>
 
@@ -508,11 +651,18 @@ export default function AdminDashboard() {
             <h2 className="font-display text-2xl font-bold text-white mb-2 flex items-center gap-2">
               <Plus className="h-6 w-6 text-gold-500" /> Assign Official Scorer
             </h2>
-            <p className="text-sm text-slate-400 mb-6">Create scoring table accounts for referee officials.</p>
+            <p className="text-sm text-slate-400 mb-6">
+              Create scoring table accounts for referee officials.
+            </p>
 
-            <form onSubmit={handleCreateScorer} className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <form
+              onSubmit={handleCreateScorer}
+              className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"
+            >
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Official Full Name</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Official Full Name
+                </label>
                 <input
                   type="text"
                   value={scrName}
@@ -524,7 +674,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Login Email</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Login Email
+                </label>
                 <input
                   type="email"
                   value={scrEmail}
@@ -536,7 +688,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Phone Number</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Phone Number
+                </label>
                 <input
                   type="text"
                   value={scrPhone}
@@ -547,7 +701,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Assigned Court</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Assigned Court
+                </label>
                 <input
                   type="text"
                   value={scrCourt}
@@ -558,15 +714,22 @@ export default function AdminDashboard() {
               </div>
 
               <div className="sm:col-span-2 lg:col-span-4">
-                <button type="submit" className="btn-gold py-3 px-8">Add Official Scorer</button>
+                <button type="submit" className="btn-gold py-3 px-8">
+                  Add Official Scorer
+                </button>
               </div>
             </form>
           </div>
 
-          <h3 className="font-display text-2xl font-bold text-white">Active Official Scorers ({scorers.length})</h3>
+          <h3 className="font-display text-2xl font-bold text-white">
+            Active Official Scorers ({scorers.length})
+          </h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {scorers.map((s) => (
-              <div key={s.id} className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between">
+              <div
+                key={s.id}
+                className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between"
+              >
                 <div>
                   <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[10px] font-semibold text-emerald-400 uppercase border border-emerald-500/30">
                     Active Official
@@ -575,8 +738,12 @@ export default function AdminDashboard() {
                   <p className="text-xs text-slate-400">{s.email}</p>
 
                   <div className="mt-4 rounded-2xl bg-white/5 p-4 text-xs text-slate-300 space-y-1.5">
-                    <p><strong>Court:</strong> {s.assignedCourt}</p>
-                    <p><strong>Phone:</strong> {s.phone}</p>
+                    <p>
+                      <strong>Court:</strong> {s.assignedCourt}
+                    </p>
+                    <p>
+                      <strong>Phone:</strong> {s.phone}
+                    </p>
                   </div>
                 </div>
 
@@ -614,7 +781,9 @@ export default function AdminDashboard() {
 
             <form onSubmit={handleSaveTournament} className="space-y-6">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2">Tournament Title</label>
+                <label className="block text-xs font-medium text-slate-300 mb-2">
+                  Tournament Title
+                </label>
                 <input
                   type="text"
                   value={tName}
@@ -625,7 +794,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2">Tournament Dates (Displayed on site)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-2">
+                  Tournament Dates (Displayed on site)
+                </label>
                 <input
                   type="text"
                   value={tDates}
@@ -637,7 +808,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2">Venue Location</label>
+                <label className="block text-xs font-medium text-slate-300 mb-2">
+                  Venue Location
+                </label>
                 <input
                   type="text"
                   value={tVenue}
@@ -649,7 +822,9 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2">Tip-off Start Time (Countdown Timer)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-2">
+                  Tip-off Start Time (Countdown Timer)
+                </label>
                 <input
                   type="datetime-local"
                   value={tTipOff.slice(0, 16)}
@@ -657,7 +832,9 @@ export default function AdminDashboard() {
                   className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm text-white focus:border-gold-500 focus:outline-none"
                   required
                 />
-                <p className="mt-1.5 text-[11px] text-slate-500">Controls the countdown clock on the public homepage hero section.</p>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Controls the countdown clock on the public homepage hero section.
+                </p>
               </div>
 
               <button type="submit" className="btn-gold py-3.5 px-8 w-full mt-2">

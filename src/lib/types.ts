@@ -1,4 +1,11 @@
-export type Category = "Men's Open" | "Women's Open" | "Under-19 Boys"
+export type Category =
+  | "Men's Open"
+  | "Women's Open"
+  | "Under-19 Boys"
+  | "Under-19 Girls"
+  | "Inter-Department"
+
+export type MatchStatus = "upcoming" | "live" | "finished"
 
 export interface Player {
   name: string
@@ -39,10 +46,10 @@ export interface Match {
   teamBId: string
   scoreA: number
   scoreB: number
-  status: "upcoming" | "live" | "finished"
+  status: MatchStatus
   time: string
   date: string
-  stage?: string
+  stage?: "pool" | "quarterfinal" | "semifinal" | "third" | "final"
   pool?: string
   round?: string
   winnerId?: string
@@ -56,6 +63,15 @@ export interface Scorer {
   phone: string
   assignedCourt: string
   active: boolean
+}
+
+/** Separate entity for the MVP race — do NOT reuse Scorer. */
+export interface PlayerStat {
+  id: string
+  playerName: string
+  teamId: string
+  points: number
+  games: number
 }
 
 export interface TournamentSettings {

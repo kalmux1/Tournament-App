@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_STORAGE_BUCKET?: string
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string
   readonly VITE_FIREBASE_APP_ID?: string
+  /** Set to "true" ONLY in local/dev to bypass Firebase auth. */
+  readonly VITE_DEV_AUTH_BYPASS?: string
 }
 
 interface ImportMeta {

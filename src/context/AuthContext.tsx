@@ -8,13 +8,15 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
 import { auth, db, isFirebaseConfigured } from "@/lib/firebase"
 
+type Role = "admin" | "scorer" | "fan" | null
+
 interface AuthContextValue {
   user: User | null
-  role: string | null
+  role: Role
   loading: boolean
   isAdmin: boolean
   isScorer: boolean
-  login: (email: string, password: string) => Promise<{ success: boolean; role?: string; error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; role?: Role; error?: string }>
   logout: () => Promise<void>
 }
 
@@ -24,64 +26,49 @@ const MASTER_ADMIN_EMAILS = [
   "admin@imrt.in",
   "admin@imrt.edu",
   "admin@imrt3x3.com",
-  "contact@imrt.in"
+  "contact@imrt.in",
 ]
 
+// Dev-only bypass. Disabled by default. Enable with VITE_DEV_AUTH_BYPASS=true.
+const DEV_AUTH_BYPASS = import.meta.env.VITE_DEV_AUTH_BYPASS === "true"
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const savedRole = localStorage.getItem("imrt_auth_role")
-    const savedEmail = localStorage.getItem("imrt_auth_email")
-    if (savedRole && savedEmail) {
-      return { email: savedEmail, uid: "local_user" } as unknown as User
-    }
-    return null
-  })
+  const [user, setUser] = useState<User | null>(null)
+  const [role, setRole] = useState<Role>(null)
+  const [loading, setLoading] = useState(true)
 
-  const [role, setRole] = useState<string | null>(() => {
-    return localStorage.getItem("imrt_auth_role") || null
-  })
-
-  const [loading, setLoading] = useState(false)
-
-  const fetchUserRole = async (currentUser: User): Promise<string> => {
+  const resolveRole = async (currentUser: User): Promise<Role> => {
     const emailLower = (currentUser.email || "").toLowerCase().trim()
-    
+
     if (MASTER_ADMIN_EMAILS.includes(emailLower)) {
       if (db && isFirebaseConfigured) {
         try {
-          const userDocRef = doc(db, "users", currentUser.uid)
-          const userSnap = await getDoc(userDocRef)
-          if (!userSnap.exists() || userSnap.data()?.role !== "admin") {
-            await setDoc(userDocRef, {
-              email: currentUser.email,
-              role: "admin",
-              updatedAt: serverTimestamp()
-            }, { merge: true })
+          const ref = doc(db, "users", currentUser.uid)
+          const snap = await getDoc(ref)
+          if (!snap.exists() || snap.data()?.role !== "admin") {
+            await setDoc(
+              ref,
+              { email: currentUser.email, role: "admin", updatedAt: serverTimestamp() },
+              { merge: true }
+            )
           }
         } catch (e) {
-          console.error("Failed to sync master admin doc:", e)
+          console.error("[Auth] master-admin sync failed:", e)
         }
       }
       return "admin"
     }
 
-    if (!db || !isFirebaseConfigured) {
-      if (emailLower.includes("scorer")) return "scorer"
-      return "admin"
-    }
+    if (!db || !isFirebaseConfigured) return "fan"
 
     try {
-      const userDocRef = doc(db, "users", currentUser.uid)
-      const userSnap = await getDoc(userDocRef)
-
-      if (userSnap.exists()) {
-        const data = userSnap.data()
-        return data.role || "fan"
-      }
-      return emailLower.includes("scorer") ? "scorer" : "admin"
+      const snap = await getDoc(doc(db, "users", currentUser.uid))
+      if (!snap.exists()) return "fan"
+      const r = snap.data()?.role
+      return r === "admin" || r === "scorer" ? r : "fan"
     } catch (err) {
-      console.error("Error fetching user role:", err)
-      return emailLower.includes("scorer") ? "scorer" : "admin"
+      console.error("[Auth] role lookup failed:", err)
+      return "fan"
     }
   }
 
@@ -93,16 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser)
-      if (currentUser) {
-        const userRole = await fetchUserRole(currentUser)
-        setRole(userRole)
-        localStorage.setItem("imrt_auth_role", userRole)
-        localStorage.setItem("imrt_auth_email", currentUser.email || "")
-      } else {
-        setRole(null)
-        localStorage.removeItem("imrt_auth_role")
-        localStorage.removeItem("imrt_auth_email")
-      }
+      setRole(currentUser ? await resolveRole(currentUser) : null)
       setLoading(false)
     })
 
@@ -110,44 +88,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    const emailClean = email.toLowerCase().trim()
+    // Dev bypass — only when explicitly enabled.
+    if (DEV_AUTH_BYPASS) {
+      const clean = email.toLowerCase().trim()
+      const assigned: Role = clean.includes("scorer") ? "scorer" : "admin"
+      setUser({ email: clean, uid: `dev_${Date.now()}` } as unknown as User)
+      setRole(assigned)
+      return { success: true, role: assigned }
+    }
 
-    if (!auth || !isFirebaseConfigured || emailClean.includes("admin") || emailClean.includes("scorer") || password.length >= 4) {
-      const assignedRole = emailClean.includes("scorer") ? "scorer" : "admin"
-      const mockUserObj = { email: emailClean, uid: `uid_${Date.now()}` } as unknown as User
-      
-      setUser(mockUserObj)
-      setRole(assignedRole)
-      localStorage.setItem("imrt_auth_role", assignedRole)
-      localStorage.setItem("imrt_auth_email", emailClean)
-      localStorage.setItem("imrt_admin_auth", "true")
-      localStorage.setItem("imrt_scorer_auth", "true")
-      
-      return { success: true, role: assignedRole }
+    if (!auth || !isFirebaseConfigured) {
+      return { success: false, error: "Authentication is unavailable. Configure Firebase." }
     }
 
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password)
-      const userRole = await fetchUserRole(cred.user)
+      const resolved = await resolveRole(cred.user)
       setUser(cred.user)
-      setRole(userRole)
-      localStorage.setItem("imrt_auth_role", userRole)
-      localStorage.setItem("imrt_auth_email", cred.user.email || "")
-      if (userRole === "admin") localStorage.setItem("imrt_admin_auth", "true")
-      if (userRole === "scorer") localStorage.setItem("imrt_scorer_auth", "true")
-      return { success: true, role: userRole }
+      setRole(resolved)
+      return { success: true, role: resolved }
     } catch (err: any) {
-      const assignedRole = emailClean.includes("scorer") ? "scorer" : "admin"
-      const mockUserObj = { email: emailClean, uid: `uid_${Date.now()}` } as unknown as User
-      
-      setUser(mockUserObj)
-      setRole(assignedRole)
-      localStorage.setItem("imrt_auth_role", assignedRole)
-      localStorage.setItem("imrt_auth_email", emailClean)
-      localStorage.setItem("imrt_admin_auth", "true")
-      localStorage.setItem("imrt_scorer_auth", "true")
-      
-      return { success: true, role: assignedRole }
+      let message = err?.message || "Login failed."
+      if (
+        message.includes("auth/invalid-credential") ||
+        message.includes("auth/user-not-found") ||
+        message.includes("auth/wrong-password")
+      ) {
+        message = "Invalid email or password."
+      } else if (message.includes("auth/too-many-requests")) {
+        message = "Too many failed attempts. Please try again later."
+      }
+      return { success: false, error: message }
     }
   }
 
@@ -156,32 +127,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await fbSignOut(auth)
       } catch (err) {
-        console.error("Logout error:", err)
+        console.error("[Auth] sign-out failed:", err)
       }
     }
     setUser(null)
     setRole(null)
-    localStorage.removeItem("imrt_auth_role")
-    localStorage.removeItem("imrt_auth_email")
-    localStorage.removeItem("imrt_admin_auth")
-    localStorage.removeItem("imrt_scorer_auth")
   }
 
   const isAdmin = role === "admin"
   const isScorer = role === "scorer" || role === "admin"
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        role,
-        loading,
-        isAdmin,
-        isScorer,
-        login,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ user, role, loading, isAdmin, isScorer, login, logout }}>
       {children}
     </AuthContext.Provider>
   )
