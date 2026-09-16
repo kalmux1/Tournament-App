@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react"
+import React, { createContext, useContext, useState, useEffect } from "react"
 import {
   collection,
   doc,
@@ -11,7 +11,8 @@ import {
   query,
   serverTimestamp,
 } from "firebase/firestore"
-import { db, isFirebaseConfigured } from "@/lib/firebase"
+import { onAuthStateChanged } from "firebase/auth"
+import { db, auth, isFirebaseConfigured } from "@/lib/firebase"
 import { mockTeams, mockMatches, mockScorers, TOURNAMENT } from "@/lib/mockData"
 import type { Team, Match, Scorer, TournamentSettings } from "@/lib/types"
 
@@ -64,130 +65,141 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem("imrt_use_local") === "true" || !isFirebaseConfigured
   })
 
-  const seededRef = useRef(false)
-
   useEffect(() => {
-    if (!db || !isFirebaseConfigured || useLocalOnly) return
+    if (!db || !auth || !isFirebaseConfigured || useLocalOnly) return
 
-    // Test connection / check if we get permission errors
-    const seedIfEmpty = async () => {
+    let unsubTeams: (() => void) | undefined
+    let unsubMatches: (() => void) | undefined
+    let unsubScorers: (() => void) | undefined
+    let unsubTournament: (() => void) | undefined
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       try {
-        const teamsSnap = await getDocs(collection(db, "teams"))
-        if (teamsSnap.empty) {
-          for (const team of mockTeams) {
-            await setDoc(doc(db, "teams", team.id), { ...team })
+        console.log("[DataContext] Auth state resolved. User:", user?.email || "Anonymous/Unauthenticated")
+
+        // 1. Seed or Check Collections
+        try {
+          const teamsSnap = await getDocs(collection(db, "teams"))
+          if (teamsSnap.empty) {
+            for (const team of mockTeams) {
+              await setDoc(doc(db, "teams", team.id), { ...team })
+            }
           }
-        }
-        const matchesSnap = await getDocs(collection(db, "matches"))
-        if (matchesSnap.empty) {
-          for (const match of mockMatches) {
-            const { id, ...matchData } = match
-            await setDoc(doc(db, "matches", id), { ...matchData })
+          const matchesSnap = await getDocs(collection(db, "matches"))
+          if (matchesSnap.empty) {
+            for (const match of mockMatches) {
+              const { id, ...matchData } = match
+              await setDoc(doc(db, "matches", id), { ...matchData })
+            }
           }
-        }
-        const scorersSnap = await getDocs(collection(db, "scorers"))
-        if (scorersSnap.empty) {
-          for (const scorer of mockScorers) {
-            await setDoc(doc(db, "scorers", scorer.id), { ...scorer })
+          const scorersSnap = await getDocs(collection(db, "scorers"))
+          if (scorersSnap.empty) {
+            for (const scorer of mockScorers) {
+              await setDoc(doc(db, "scorers", scorer.id), { ...scorer })
+            }
           }
+          const tourSnap = await getDocs(collection(db, "tournament"))
+          if (tourSnap.empty) {
+            await setDoc(doc(db, "tournament", "config"), { ...DEFAULT_TOURNAMENT })
+          }
+        } catch (seedErr: any) {
+          if (seedErr?.code === "permission-denied" || seedErr?.message?.includes("Missing or insufficient permissions")) {
+            console.warn("[DataContext] Firestore permissions denied during seed. Using robust local mode.")
+            setUseLocalOnly(true)
+            localStorage.setItem("imrt_use_local", "true")
+            return
+          }
+          console.error("[DataContext] Seeding notice:", seedErr)
         }
-        const tourSnap = await getDocs(collection(db, "tournament"))
-        if (tourSnap.empty) {
-          await setDoc(doc(db, "tournament", "config"), { ...DEFAULT_TOURNAMENT })
-        }
+
+        // 2. Setup Real-time Listeners
+        unsubTeams = onSnapshot(
+          query(collection(db, "teams")),
+          (snap) => {
+            const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Team, "id">) }) as Team)
+            list.sort((a, b) => {
+              if (a.approved !== b.approved) return a.approved ? 1 : -1
+              return 0
+            })
+            if (list.length > 0) {
+              setTeams(list)
+              localStorage.setItem("imrt_teams", JSON.stringify(list))
+            }
+          },
+          (err) => {
+            if (err?.code === "permission-denied") {
+              console.warn("[DataContext] Teams listener permission denied. Switching to local state.")
+              setUseLocalOnly(true)
+              localStorage.setItem("imrt_use_local", "true")
+            }
+          }
+        )
+
+        unsubMatches = onSnapshot(
+          query(collection(db, "matches")),
+          (snap) => {
+            const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, "id">) }) as Match)
+            if (list.length > 0) {
+              setMatches(list)
+              localStorage.setItem("imrt_matches", JSON.stringify(list))
+            }
+          },
+          (err) => {
+            if (err?.code === "permission-denied") {
+              setUseLocalOnly(true)
+              localStorage.setItem("imrt_use_local", "true")
+            }
+          }
+        )
+
+        unsubScorers = onSnapshot(
+          query(collection(db, "scorers")),
+          (snap) => {
+            const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Scorer, "id">) }) as Scorer)
+            if (list.length > 0) {
+              setScorers(list)
+              localStorage.setItem("imrt_scorers", JSON.stringify(list))
+            }
+          },
+          (err) => {
+            if (err?.code === "permission-denied") {
+              setUseLocalOnly(true)
+              localStorage.setItem("imrt_use_local", "true")
+            }
+          }
+        )
+
+        unsubTournament = onSnapshot(
+          doc(db, "tournament", "config"),
+          (snap) => {
+            if (snap.exists()) {
+              const data = snap.data() as TournamentSettings
+              setTournament(data)
+              localStorage.setItem("imrt_tournament", JSON.stringify(data))
+            }
+          },
+          (err) => {
+            if (err?.code === "permission-denied") {
+              setUseLocalOnly(true)
+              localStorage.setItem("imrt_use_local", "true")
+            }
+          }
+        )
       } catch (err: any) {
-        if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
-          console.warn("[DataContext] Firestore permissions denied. Falling back to robust local/offline mode so the app works seamlessly.")
-          setUseLocalOnly(true)
-          localStorage.setItem("imrt_use_local", "true")
-        } else {
-          console.error("[DataContext] Seeding error:", err)
-        }
-      }
-    }
-
-    seedIfEmpty()
-
-    const unsubTeams = onSnapshot(
-      query(collection(db, "teams")),
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Team, "id">) }) as Team)
-        list.sort((a, b) => {
-          if (a.approved !== b.approved) return a.approved ? 1 : -1
-          return 0
-        })
-        if (list.length > 0) {
-          setTeams(list)
-          localStorage.setItem("imrt_teams", JSON.stringify(list))
-        }
-      },
-      (err) => {
-        if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
-          console.warn("[DataContext] Teams listener permission denied. Switching to local state.")
-          setUseLocalOnly(true)
-          localStorage.setItem("imrt_use_local", "true")
-        } else {
-          console.error("[DataContext] teams listener error:", err)
-        }
-      }
-    )
-
-    const unsubMatches = onSnapshot(
-      query(collection(db, "matches")),
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, "id">) }) as Match)
-        if (list.length > 0) {
-          setMatches(list)
-          localStorage.setItem("imrt_matches", JSON.stringify(list))
-        }
-      },
-      (err) => {
+        console.error("Firestore initialization error:", err)
         if (err?.code === "permission-denied") {
           setUseLocalOnly(true)
           localStorage.setItem("imrt_use_local", "true")
         }
       }
-    )
-
-    const unsubScorers = onSnapshot(
-      query(collection(db, "scorers")),
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Scorer, "id">) }) as Scorer)
-        if (list.length > 0) {
-          setScorers(list)
-          localStorage.setItem("imrt_scorers", JSON.stringify(list))
-        }
-      },
-      (err) => {
-        if (err?.code === "permission-denied") {
-          setUseLocalOnly(true)
-          localStorage.setItem("imrt_use_local", "true")
-        }
-      }
-    )
-
-    const unsubTournament = onSnapshot(
-      doc(db, "tournament", "config"),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data() as TournamentSettings
-          setTournament(data)
-          localStorage.setItem("imrt_tournament", JSON.stringify(data))
-        }
-      },
-      (err) => {
-        if (err?.code === "permission-denied") {
-          setUseLocalOnly(true)
-          localStorage.setItem("imrt_use_local", "true")
-        }
-      }
-    )
+    })
 
     return () => {
-      unsubTeams()
-      unsubMatches()
-      unsubScorers()
-      unsubTournament()
+      unsubscribeAuth()
+      if (unsubTeams) unsubTeams()
+      if (unsubMatches) unsubMatches()
+      if (unsubScorers) unsubScorers()
+      if (unsubTournament) unsubTournament()
     }
   }, [useLocalOnly])
 
