@@ -24,6 +24,9 @@ interface DataContextType {
   addTeam: (
     team: Omit<Team, "id" | "wins" | "losses" | "pointsFor" | "pointsAgainst" | "approved">
   ) => Promise<void>
+  createTeam: (team: Omit<Team, "id">) => Promise<void>
+  updateTeam: (teamId: string, patch: Partial<Team>) => Promise<void>
+  deleteTeam: (teamId: string) => Promise<void>
   updateTeamStatus: (teamId: string, approved: boolean) => Promise<void>
   updateMatchScore: (
     matchId: string,
@@ -50,7 +53,6 @@ const DEFAULT_TOURNAMENT: TournamentSettings = {
   contactEmail: TOURNAMENT.contactEmail,
 }
 
-// Wipe any pre-v2 localStorage keys (they contained demo data)
 function migrateStorage() {
   try {
     const keysToRemove: string[] = []
@@ -90,7 +92,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     () => localStorage.getItem(KEY("use_local")) === "true" || !isFirebaseConfigured
   )
 
-  // Run storage migration once on mount
   useEffect(() => {
     migrateStorage()
   }, [])
@@ -105,7 +106,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Ensure the tournament config document exists (only auto-seeded doc)
   useEffect(() => {
     if (!db || !isFirebaseConfigured || useLocalOnly) return
     const firestore = db
@@ -122,7 +122,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useLocalOnly])
 
-  // Realtime listeners
   useEffect(() => {
     if (!db || !isFirebaseConfigured || useLocalOnly) return
     const firestore = db
@@ -227,6 +226,61 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("teams"), JSON.stringify(updated))
       return updated
     })
+  }
+
+  /** Admin-side: create a fully-specified team */
+  const createTeam = async (teamData: Omit<Team, "id">) => {
+    const newTeam: Team = { ...teamData, id: `team_${Date.now()}` }
+    setTeams((prev) => {
+      const updated = [newTeam, ...prev]
+      localStorage.setItem(KEY("teams"), JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
+      const firestore = db
+      try {
+        await setDoc(doc(firestore, "teams", newTeam.id), {
+          ...newTeam,
+          createdAt: serverTimestamp(),
+        })
+      } catch (err) {
+        fallbackToLocal(err)
+      }
+    }
+  }
+
+  /** Admin-side: update any subset of team fields */
+  const updateTeam = async (teamId: string, patch: Partial<Team>) => {
+    setTeams((prev) => {
+      const updated = prev.map((t) => (t.id === teamId ? { ...t, ...patch } : t))
+      localStorage.setItem(KEY("teams"), JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
+      const firestore = db
+      try {
+        await setDoc(doc(firestore, "teams", teamId), patch, { merge: true })
+      } catch (err) {
+        fallbackToLocal(err)
+      }
+    }
+  }
+
+  /** Admin-side: permanently remove a team */
+  const deleteTeam = async (teamId: string) => {
+    setTeams((prev) => {
+      const updated = prev.filter((t) => t.id !== teamId)
+      localStorage.setItem(KEY("teams"), JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
+      const firestore = db
+      try {
+        await deleteDoc(doc(firestore, "teams", teamId))
+      } catch (err) {
+        fallbackToLocal(err)
+      }
+    }
   }
 
   const updateTeamStatus = async (teamId: string, approved: boolean) => {
@@ -375,6 +429,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         playerStats,
         tournament,
         addTeam,
+        createTeam,
+        updateTeam,
+        deleteTeam,
         updateTeamStatus,
         updateMatchScore,
         addMatch,
