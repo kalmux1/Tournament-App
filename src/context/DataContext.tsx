@@ -42,37 +42,6 @@ const DEFAULT_TOURNAMENT: TournamentSettings = {
   contactEmail: TOURNAMENT.contactEmail,
 }
 
-async function seedIfEmpty() {
-  if (!db || !isFirebaseConfigured) return
-  try {
-    const teamsSnap = await getDocs(collection(db, "teams"))
-    if (teamsSnap.empty) {
-      for (const team of mockTeams) {
-        await setDoc(doc(db, "teams", team.id), { ...team })
-      }
-    }
-    const matchesSnap = await getDocs(collection(db, "matches"))
-    if (matchesSnap.empty) {
-      for (const match of mockMatches) {
-        const { id, ...matchData } = match
-        await setDoc(doc(db, "matches", id), { ...matchData })
-      }
-    }
-    const scorersSnap = await getDocs(collection(db, "scorers"))
-    if (scorersSnap.empty) {
-      for (const scorer of mockScorers) {
-        await setDoc(doc(db, "scorers", scorer.id), { ...scorer })
-      }
-    }
-    const tourSnap = await getDocs(collection(db, "tournament"))
-    if (tourSnap.empty) {
-      await setDoc(doc(db, "tournament", "config"), { ...DEFAULT_TOURNAMENT })
-    }
-  } catch (err) {
-    console.error("[DataContext] Seeding error:", err)
-  }
-}
-
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [teams, setTeams] = useState<Team[]>(() => {
     const saved = localStorage.getItem("imrt_teams")
@@ -90,16 +59,54 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem("imrt_tournament")
     return saved ? JSON.parse(saved) : DEFAULT_TOURNAMENT
   })
-  const [firestoreReady, setFirestoreReady] = useState(false)
+
+  const [useLocalOnly, setUseLocalOnly] = useState<boolean>(() => {
+    return localStorage.getItem("imrt_use_local") === "true" || !isFirebaseConfigured
+  })
+
   const seededRef = useRef(false)
 
   useEffect(() => {
-    if (!db || !isFirebaseConfigured) return
+    if (!db || !isFirebaseConfigured || useLocalOnly) return
 
-    seedIfEmpty().then(() => {
-      seededRef.current = true
-      setFirestoreReady(true)
-    })
+    // Test connection / check if we get permission errors
+    const seedIfEmpty = async () => {
+      try {
+        const teamsSnap = await getDocs(collection(db, "teams"))
+        if (teamsSnap.empty) {
+          for (const team of mockTeams) {
+            await setDoc(doc(db, "teams", team.id), { ...team })
+          }
+        }
+        const matchesSnap = await getDocs(collection(db, "matches"))
+        if (matchesSnap.empty) {
+          for (const match of mockMatches) {
+            const { id, ...matchData } = match
+            await setDoc(doc(db, "matches", id), { ...matchData })
+          }
+        }
+        const scorersSnap = await getDocs(collection(db, "scorers"))
+        if (scorersSnap.empty) {
+          for (const scorer of mockScorers) {
+            await setDoc(doc(db, "scorers", scorer.id), { ...scorer })
+          }
+        }
+        const tourSnap = await getDocs(collection(db, "tournament"))
+        if (tourSnap.empty) {
+          await setDoc(doc(db, "tournament", "config"), { ...DEFAULT_TOURNAMENT })
+        }
+      } catch (err: any) {
+        if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
+          console.warn("[DataContext] Firestore permissions denied. Falling back to robust local/offline mode so the app works seamlessly.")
+          setUseLocalOnly(true)
+          localStorage.setItem("imrt_use_local", "true")
+        } else {
+          console.error("[DataContext] Seeding error:", err)
+        }
+      }
+    }
+
+    seedIfEmpty()
 
     const unsubTeams = onSnapshot(
       query(collection(db, "teams")),
@@ -109,30 +116,54 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (a.approved !== b.approved) return a.approved ? 1 : -1
           return 0
         })
-        setTeams(list)
-        localStorage.setItem("imrt_teams", JSON.stringify(list))
+        if (list.length > 0) {
+          setTeams(list)
+          localStorage.setItem("imrt_teams", JSON.stringify(list))
+        }
       },
-      (err) => console.error("[DataContext] teams listener error:", err)
+      (err) => {
+        if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
+          console.warn("[DataContext] Teams listener permission denied. Switching to local state.")
+          setUseLocalOnly(true)
+          localStorage.setItem("imrt_use_local", "true")
+        } else {
+          console.error("[DataContext] teams listener error:", err)
+        }
+      }
     )
 
     const unsubMatches = onSnapshot(
       query(collection(db, "matches")),
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, "id">) }) as Match)
-        setMatches(list)
-        localStorage.setItem("imrt_matches", JSON.stringify(list))
+        if (list.length > 0) {
+          setMatches(list)
+          localStorage.setItem("imrt_matches", JSON.stringify(list))
+        }
       },
-      (err) => console.error("[DataContext] matches listener error:", err)
+      (err) => {
+        if (err?.code === "permission-denied") {
+          setUseLocalOnly(true)
+          localStorage.setItem("imrt_use_local", "true")
+        }
+      }
     )
 
     const unsubScorers = onSnapshot(
       query(collection(db, "scorers")),
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Scorer, "id">) }) as Scorer)
-        setScorers(list)
-        localStorage.setItem("imrt_scorers", JSON.stringify(list))
+        if (list.length > 0) {
+          setScorers(list)
+          localStorage.setItem("imrt_scorers", JSON.stringify(list))
+        }
       },
-      (err) => console.error("[DataContext] scorers listener error:", err)
+      (err) => {
+        if (err?.code === "permission-denied") {
+          setUseLocalOnly(true)
+          localStorage.setItem("imrt_use_local", "true")
+        }
+      }
     )
 
     const unsubTournament = onSnapshot(
@@ -144,7 +175,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem("imrt_tournament", JSON.stringify(data))
         }
       },
-      (err) => console.error("[DataContext] tournament listener error:", err)
+      (err) => {
+        if (err?.code === "permission-denied") {
+          setUseLocalOnly(true)
+          localStorage.setItem("imrt_use_local", "true")
+        }
+      }
     )
 
     return () => {
@@ -153,7 +189,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       unsubScorers()
       unsubTournament()
     }
-  }, [])
+  }, [useLocalOnly])
 
   const addTeam = async (newTeamData: Omit<Team, "id" | "wins" | "losses" | "pointsFor" | "pointsAgainst" | "approved">) => {
     const newTeam: Team = {
@@ -165,27 +201,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       approved: false,
     } as Team
 
-    if (db && isFirebaseConfigured) {
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
         const ref = await addDoc(collection(db, "teams"), { ...newTeam, createdAt: serverTimestamp() })
         console.log("[DataContext] Team saved to Firestore:", ref.id)
       } catch (err) {
-        console.error("[DataContext] addTeam error:", err)
-        setTeams((prev) => [{ ...newTeam, id: `team_${Date.now()}` }, ...prev])
+        console.error("[DataContext] addTeam error, saving locally:", err)
+        const localTeam = { ...newTeam, id: `team_${Date.now()}` }
+        setTeams((prev) => {
+          const updated = [localTeam, ...prev]
+          localStorage.setItem("imrt_teams", JSON.stringify(updated))
+          return updated
+        })
       }
     } else {
       const localTeam = { ...newTeam, id: `team_${Date.now()}` }
-      setTeams((prev) => [localTeam, ...prev])
-      localStorage.setItem("imrt_teams", JSON.stringify([localTeam, ...teams]))
+      setTeams((prev) => {
+        const updated = [localTeam, ...prev]
+        localStorage.setItem("imrt_teams", JSON.stringify(updated))
+        return updated
+      })
     }
   }
 
   const updateTeamStatus = async (teamId: string, approved: boolean) => {
-    setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, approved } : t)))
-    if (db && isFirebaseConfigured) {
+    setTeams((prev) => {
+      const updated = prev.map((t) => (t.id === teamId ? { ...t, approved } : t))
+      localStorage.setItem("imrt_teams", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
         await updateDoc(doc(db, "teams", teamId), { approved })
-        console.log("[DataContext] Team status updated:", teamId, { approved })
       } catch (err) {
         console.error("[DataContext] updateTeamStatus error:", err)
       }
@@ -193,11 +240,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updateMatchScore = async (matchId: string, scoreA: number, scoreB: number, status: Match["status"]) => {
-    setMatches((prev) => prev.map((m) => (m.id === matchId ? { ...m, scoreA, scoreB, status } : m)))
-    if (db && isFirebaseConfigured) {
+    setMatches((prev) => {
+      const updated = prev.map((m) => (m.id === matchId ? { ...m, scoreA, scoreB, status } : m))
+      localStorage.setItem("imrt_matches", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
         await updateDoc(doc(db, "matches", matchId), { scoreA, scoreB, status })
-        console.log("[DataContext] Match score updated:", matchId, { scoreA, scoreB, status })
       } catch (err) {
         console.error("[DataContext] updateMatchScore error:", err)
       }
@@ -205,28 +255,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }
 
   const addMatch = async (newMatchData: Omit<Match, "id">) => {
-    if (db && isFirebaseConfigured) {
+    const localMatch = { ...newMatchData, id: `match_${Date.now()}` }
+    setMatches((prev) => {
+      const updated = [localMatch, ...prev]
+      localStorage.setItem("imrt_matches", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
-        const ref = await addDoc(collection(db, "matches"), { ...newMatchData, createdAt: serverTimestamp() })
-        console.log("[DataContext] Match saved to Firestore:", ref.id)
+        await addDoc(collection(db, "matches"), { ...newMatchData, createdAt: serverTimestamp() })
       } catch (err) {
         console.error("[DataContext] addMatch error:", err)
-        const localMatch = { ...newMatchData, id: `match_${Date.now()}` }
-        setMatches((prev) => [localMatch, ...prev])
       }
-    } else {
-      const localMatch = { ...newMatchData, id: `match_${Date.now()}` }
-      setMatches((prev) => [localMatch, ...prev])
-      localStorage.setItem("imrt_matches", JSON.stringify([localMatch, ...matches]))
     }
   }
 
   const deleteMatch = async (matchId: string) => {
-    setMatches((prev) => prev.filter((m) => m.id !== matchId))
-    if (db && isFirebaseConfigured) {
+    setMatches((prev) => {
+      const updated = prev.filter((m) => m.id !== matchId)
+      localStorage.setItem("imrt_matches", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
         await deleteDoc(doc(db, "matches", matchId))
-        console.log("[DataContext] Match deleted:", matchId)
       } catch (err) {
         console.error("[DataContext] deleteMatch error:", err)
       }
@@ -234,28 +286,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }
 
   const addScorer = async (newScorerData: Omit<Scorer, "id">) => {
-    if (db && isFirebaseConfigured) {
+    const localScorer = { ...newScorerData, id: `scorer_${Date.now()}` }
+    setScorers((prev) => {
+      const updated = [...prev, localScorer]
+      localStorage.setItem("imrt_scorers", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
-        const ref = await addDoc(collection(db, "scorers"), { ...newScorerData, createdAt: serverTimestamp() })
-        console.log("[DataContext] Scorer saved to Firestore:", ref.id)
+        await addDoc(collection(db, "scorers"), { ...newScorerData, createdAt: serverTimestamp() })
       } catch (err) {
         console.error("[DataContext] addScorer error:", err)
-        const localScorer = { ...newScorerData, id: `scorer_${Date.now()}` }
-        setScorers((prev) => [...prev, localScorer])
       }
-    } else {
-      const localScorer = { ...newScorerData, id: `scorer_${Date.now()}` }
-      setScorers((prev) => [...prev, localScorer])
-      localStorage.setItem("imrt_scorers", JSON.stringify([...scorers, localScorer]))
     }
   }
 
   const deleteScorer = async (scorerId: string) => {
-    setScorers((prev) => prev.filter((s) => s.id !== scorerId))
-    if (db && isFirebaseConfigured) {
+    setScorers((prev) => {
+      const updated = prev.filter((s) => s.id !== scorerId)
+      localStorage.setItem("imrt_scorers", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
         await deleteDoc(doc(db, "scorers", scorerId))
-        console.log("[DataContext] Scorer deleted:", scorerId)
       } catch (err) {
         console.error("[DataContext] deleteScorer error:", err)
       }
@@ -263,16 +317,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updateTournamentSettings = async (newSettings: Partial<TournamentSettings>) => {
-    setTournament((prev) => ({ ...prev, ...newSettings }))
-    if (db && isFirebaseConfigured) {
+    setTournament((prev) => {
+      const updated = { ...prev, ...newSettings }
+      localStorage.setItem("imrt_tournament", JSON.stringify(updated))
+      return updated
+    })
+    if (db && isFirebaseConfigured && !useLocalOnly) {
       try {
         await setDoc(doc(db, "tournament", "config"), { ...tournament, ...newSettings }, { merge: true })
-        console.log("[DataContext] Tournament settings updated:", newSettings)
       } catch (err) {
         console.error("[DataContext] updateTournamentSettings error:", err)
       }
-    } else {
-      localStorage.setItem("imrt_tournament", JSON.stringify({ ...tournament, ...newSettings }))
     }
   }
 
