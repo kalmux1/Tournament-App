@@ -98,7 +98,7 @@ export default function AdminLogin() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter admin email (e.g. admin@imrt.in)"
+                placeholder="Enter admin email"
                 className="w-full rounded-xl border border-white/10 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
               />
             </div>
