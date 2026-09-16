@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Check, ChevronRight, ChevronLeft, Copy, PartyPopper, Users } from "lucide-react"
+import { collection, addDoc, serverTimestamp } from "firebase/firestore"
+import { db, isFirebaseConfigured } from "@/lib/firebase"
 import { useData } from "@/context/DataContext"
 import type { Category, Player, Team } from "@/lib/types"
 
@@ -20,6 +22,7 @@ export default function Register() {
   const [step, setStep] = useState(0)
   const [copied, setCopied] = useState(false)
   const [done, setDone] = useState<Team | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const [name, setName] = useState("")
   const [category, setCategory] = useState<Category>("Men's Open")
@@ -39,20 +42,60 @@ export default function Register() {
     setPlayers((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)))
 
   const submit = async () => {
-    const roster = [...players]
-    if (sub.name.trim()) roster.push({ ...sub, isSub: true })
-    const code = genCode()
-    const teamData = {
-      code,
-      name: name.trim(),
-      color,
-      category,
-      pool: "TBD",
-      captain,
-      roster,
+    if (submitting) return
+    setSubmitting(true)
+
+    try {
+      const roster = [...players]
+      if (sub.name.trim()) roster.push({ ...sub, isSub: true })
+      const code = genCode()
+      
+      const teamPayload = {
+        code,
+        name: name.trim(),
+        color,
+        category,
+        pool: "TBD",
+        captain,
+        roster,
+        wins: 0,
+        losses: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        approved: false,
+        createdAt: serverTimestamp(),
+      }
+
+      if (db && isFirebaseConfigured) {
+        try {
+          const docRef = await addDoc(collection(db, "teams"), teamPayload)
+          console.log("Team successfully saved to Firestore with ID:", docRef.id)
+        } catch (fbErr) {
+          console.error("Firestore team registration error:", fbErr)
+        }
+      }
+
+      // Also call context/local handler
+      await addTeam({
+        code,
+        name: name.trim(),
+        color,
+        category,
+        pool: "TBD",
+        captain,
+        roster,
+      })
+
+      setDone({
+        ...teamPayload,
+        id: `t_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+      } as unknown as Team)
+    } catch (err) {
+      console.error("Registration error:", err)
+    } finally {
+      setSubmitting(false)
     }
-    await addTeam(teamData)
-    setDone({ ...teamData, id: `t${Date.now()}`, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, approved: false } as Team)
   }
 
   if (done) {
@@ -256,18 +299,18 @@ export default function Register() {
         <div className="mt-8 flex justify-between">
           <button
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0}
+            disabled={step === 0 || submitting}
             className="btn-ghost disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" /> Back
           </button>
           {step < 3 ? (
-            <button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="btn-gold disabled:opacity-40">
+            <button onClick={() => setStep((s) => s + 1)} disabled={!canNext || submitting} className="btn-gold disabled:opacity-40">
               Continue <ChevronRight className="h-4 w-4" />
             </button>
           ) : (
-            <button onClick={submit} className="btn-gold">
-              <Check className="h-4 w-4" /> Submit Registration
+            <button onClick={submit} disabled={submitting} className="btn-gold disabled:opacity-40">
+              <Check className="h-4 w-4" /> {submitting ? "Submitting..." : "Submit Registration"}
             </button>
           )}
         </div>
