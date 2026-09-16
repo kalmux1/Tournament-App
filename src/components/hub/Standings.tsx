@@ -9,6 +9,18 @@ function sortTeams(a: Team, b: Team) {
 
 export default function Standings({ onSelect }: { onSelect: (t: Team) => void }) {
   const { teams } = useData()
+
+  if (teams.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
+        <h3 className="font-display text-xl font-bold text-white">No teams registered yet</h3>
+        <p className="mt-2 text-sm text-slate-400">
+          Standings will appear here once teams register and are approved.
+        </p>
+      </div>
+    )
+  }
+
   const pools = Array.from(new Set(teams.map((t) => t.pool))).sort()
 
   return (
@@ -47,19 +59,33 @@ export default function Standings({ onSelect }: { onSelect: (t: Team) => void })
                       >
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-3">
-                            <span className={`w-4 font-display text-xs ${i < 2 ? "text-gold-500" : "text-slate-500"}`}>
+                            <span
+                              className={`w-4 font-display text-xs ${
+                                i < 2 ? "text-gold-500" : "text-slate-500"
+                              }`}
+                            >
                               {i + 1}
                             </span>
                             <TeamLogo team={t} size="sm" />
                             <span className="font-medium text-white">{t.name}</span>
                           </div>
                         </td>
-                        <td className="px-2 py-2.5 text-center text-slate-300">{t.wins + t.losses}</td>
-                        <td className="px-2 py-2.5 text-center font-semibold text-white">{t.wins}</td>
+                        <td className="px-2 py-2.5 text-center text-slate-300">
+                          {t.wins + t.losses}
+                        </td>
+                        <td className="px-2 py-2.5 text-center font-semibold text-white">
+                          {t.wins}
+                        </td>
                         <td className="px-2 py-2.5 text-center text-slate-400">{t.losses}</td>
                         <td className="px-2 py-2.5 text-center text-slate-300">{t.pointsFor}</td>
-                        <td className="px-2 py-2.5 text-center text-slate-300">{t.pointsAgainst}</td>
-                        <td className={`px-3 py-2.5 text-center font-semibold ${diff >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        <td className="px-2 py-2.5 text-center text-slate-300">
+                          {t.pointsAgainst}
+                        </td>
+                        <td
+                          className={`px-3 py-2.5 text-center font-semibold ${
+                            diff >= 0 ? "text-emerald-400" : "text-red-400"
+                          }`}
+                        >
                           {diff > 0 ? `+${diff}` : diff}
                         </td>
                       </tr>

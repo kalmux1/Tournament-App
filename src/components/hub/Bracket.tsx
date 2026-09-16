@@ -7,19 +7,39 @@ function BracketMatch({ match }: { match: Match }) {
   const a = getTeam(match.teamAId)
   const b = getTeam(match.teamBId)
 
-  const Row = ({ team, score, winner }: { team?: ReturnType<typeof getTeam>; score: number; winner: boolean }) => (
+  const Row = ({
+    team,
+    score,
+    winner,
+  }: {
+    team?: ReturnType<typeof getTeam>
+    score: number
+    winner: boolean
+  }) => (
     <div
       className={`flex items-center justify-between gap-2 px-3 py-2 ${
         winner ? "bg-gold-500/15" : ""
       }`}
     >
       <div className="flex items-center gap-2 overflow-hidden">
-        {team ? <TeamLogo team={team} size="sm" /> : <span className="h-8 w-8 rounded-full bg-white/10" />}
-        <span className={`truncate font-display text-sm ${winner ? "font-bold text-gold-500" : "text-slate-200"}`}>
+        {team ? (
+          <TeamLogo team={team} size="sm" />
+        ) : (
+          <span className="h-8 w-8 rounded-full bg-white/10" />
+        )}
+        <span
+          className={`truncate font-display text-sm ${
+            winner ? "font-bold text-gold-500" : "text-slate-200"
+          }`}
+        >
           {team?.name ?? "TBD"}
         </span>
       </div>
-      <span className={`font-display text-sm font-bold tabular-nums ${winner ? "text-gold-500" : "text-slate-400"}`}>
+      <span
+        className={`font-display text-sm font-bold tabular-nums ${
+          winner ? "text-gold-500" : "text-slate-400"
+        }`}
+      >
         {match.status === "upcoming" ? "—" : score}
       </span>
     </div>
@@ -44,6 +64,21 @@ export default function Bracket() {
   const sf = matches.filter((m) => m.stage === "semifinal")
   const third = matches.find((m) => m.stage === "third")
   const final = matches.find((m) => m.stage === "final")
+
+  const hasAny = qf.length + sf.length + (third ? 1 : 0) + (final ? 1 : 0) > 0
+
+  if (!hasAny) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
+        <h3 className="font-display text-xl font-bold text-white">
+          Knockout bracket not yet set
+        </h3>
+        <p className="mt-2 text-sm text-slate-400">
+          The bracket appears once quarterfinal, semifinal, and final fixtures are scheduled.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="overflow-x-auto pb-4">
@@ -72,7 +107,9 @@ export default function Bracket() {
 function Round({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col justify-center gap-5">
-      <h4 className="text-center font-display text-xs font-bold uppercase tracking-[0.2em] text-gold-500">{title}</h4>
+      <h4 className="text-center font-display text-xs font-bold uppercase tracking-[0.2em] text-gold-500">
+        {title}
+      </h4>
       <div className="flex flex-1 flex-col justify-around gap-5">{children}</div>
     </div>
   )

@@ -84,13 +84,15 @@ const EMPTY_STATE: LiveGameState = {
   status: "live",
 }
 
+const STORAGE_KEY = "imrt_v2_live_game"
+
 export default function ScorerDashboard() {
   const navigate = useNavigate()
   const { logout } = useAuth()
   const { teams, matches } = useData()
 
   const [gameState, setGameState] = useState<LiveGameState>(() => {
-    const saved = localStorage.getItem("imrt_live_game_v4")
+    const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       try {
         return JSON.parse(saved)
@@ -115,10 +117,7 @@ export default function ScorerDashboard() {
 
   // Matches the scorer can run — upcoming or live
   const selectableMatches = useMemo(
-    () =>
-      matches.filter(
-        (m) => m.status === "upcoming" || m.status === "live"
-      ),
+    () => matches.filter((m) => m.status === "upcoming" || m.status === "live"),
     [matches]
   )
 
@@ -196,10 +195,10 @@ export default function ScorerDashboard() {
 
   // Persist to localStorage
   useEffect(() => {
-    localStorage.setItem("imrt_live_game_v4", JSON.stringify(gameState))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState))
   }, [gameState])
 
-  // Debounced sync to Firestore — writes to the SELECTED match doc
+  // Debounced sync to Firestore — only when a match is selected
   useEffect(() => {
     if (!hasMatch || !db || !isFirebaseConfigured) return
     const firestore = db
@@ -349,7 +348,7 @@ export default function ScorerDashboard() {
           )
         }
 
-        // 3. Update playerStats (MVP race) — one doc per player per team
+        // 3. Update playerStats (MVP race) — accumulate across matches
         const scorersToWrite: Array<{ player: LivePlayer; teamId: string }> = []
         if (teamA) {
           finalState.rosterA.forEach((p) => {
@@ -1034,124 +1033,130 @@ export default function ScorerDashboard() {
                       </span>
                     </div>
 
-                    <div className="space-y-4">
-                      {gameState[rosterKey].map((player, idx) => (
-                        <div
-                          key={idx}
-                          className={`rounded-2xl border p-4 sm:p-5 transition duration-200 ${
-                            player.subbedOut
-                              ? "border-amber-500/20 bg-amber-950/10 opacity-75"
-                              : "border-emerald-500/30 bg-slate-950/90 shadow-xl ring-1 ring-emerald-500/10"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-gold-500/20 to-amber-600/20 border border-gold-500/30 font-mono text-sm font-black text-gold-400 shadow-inner">
-                                #{player.jersey}
-                              </span>
-                              <div>
-                                <div className="font-display font-bold text-base text-white flex items-center gap-2">
-                                  {player.name}
-                                  <span
-                                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                      player.subbedOut
-                                        ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                                        : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                    }`}
-                                  >
-                                    {player.subbedOut ? "Bench" : "On Court"}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs text-slate-400">
-                                  <span className="text-slate-300 font-medium">{player.role}</span>
-                                  <span>•</span>
-                                  <span className="font-mono text-gold-400 font-bold">
-                                    {player.points} pts
-                                  </span>
+                    {gameState[rosterKey].length === 0 ? (
+                      <p className="rounded-xl border border-white/10 bg-white/5 px-4 py-8 text-center text-xs text-slate-400">
+                        No roster available for this team.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {gameState[rosterKey].map((player, idx) => (
+                          <div
+                            key={idx}
+                            className={`rounded-2xl border p-4 sm:p-5 transition duration-200 ${
+                              player.subbedOut
+                                ? "border-amber-500/20 bg-amber-950/10 opacity-75"
+                                : "border-emerald-500/30 bg-slate-950/90 shadow-xl ring-1 ring-emerald-500/10"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-gold-500/20 to-amber-600/20 border border-gold-500/30 font-mono text-sm font-black text-gold-400 shadow-inner">
+                                  #{player.jersey}
+                                </span>
+                                <div>
+                                  <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                                    {player.name}
+                                    <span
+                                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                        player.subbedOut
+                                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                          : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                      }`}
+                                    >
+                                      {player.subbedOut ? "Bench" : "On Court"}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                                    <span className="text-slate-300 font-medium">{player.role}</span>
+                                    <span>•</span>
+                                    <span className="font-mono text-gold-400 font-bold">
+                                      {player.points} pts
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            <button
-                              onClick={() => toggleSub(side, idx)}
-                              disabled={isEnded}
-                              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow cursor-pointer disabled:opacity-30 ${
-                                player.subbedOut
-                                  ? "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-white/10"
-                                  : "bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30"
-                              }`}
-                            >
-                              {player.subbedOut ? (
-                                <UserCheck className="h-3.5 w-3.5" />
-                              ) : (
-                                <UserX className="h-3.5 w-3.5" />
-                              )}
-                              {player.subbedOut ? "Sub In" : "Send to Bench"}
-                            </button>
-                          </div>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">
-                                Points:
-                              </span>
                               <button
-                                onClick={() => modifyPlayerPoints(side, idx, -1)}
-                                disabled={isEnded || player.subbedOut || player.points <= 0}
-                                className="rounded-lg bg-red-500/10 border border-red-500/30 px-2.5 py-1.5 text-xs font-black text-red-400 hover:bg-red-500/20 active:scale-95 transition disabled:opacity-30 cursor-pointer"
+                                onClick={() => toggleSub(side, idx)}
+                                disabled={isEnded}
+                                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow cursor-pointer disabled:opacity-30 ${
+                                  player.subbedOut
+                                    ? "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-white/10"
+                                    : "bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30"
+                                }`}
                               >
-                                -1
+                                {player.subbedOut ? (
+                                  <UserCheck className="h-3.5 w-3.5" />
+                                ) : (
+                                  <UserX className="h-3.5 w-3.5" />
+                                )}
+                                {player.subbedOut ? "Sub In" : "Send to Bench"}
                               </button>
-                              {[1, 2, 3].map((delta) => (
-                                <button
-                                  key={delta}
-                                  onClick={() => modifyPlayerPoints(side, idx, delta)}
-                                  disabled={isEnded || player.subbedOut}
-                                  className={`rounded-lg border px-3 py-1.5 text-xs font-black active:scale-95 transition disabled:opacity-50 cursor-pointer ${
-                                    delta === 3
-                                      ? "bg-gold-500/20 border-gold-500/30 text-gold-400 hover:bg-gold-500/30"
-                                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                                  }`}
-                                >
-                                  +{delta} {delta === 3 ? "ARC" : delta === 2 ? "PTS" : "PT"}
-                                </button>
-                              ))}
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                                Fouls ({player.fouls}/5):
-                              </span>
-                              {player.fouls >= 5 ? (
-                                <span className="rounded-lg bg-red-500/20 border border-red-500/30 px-2.5 py-1 text-[11px] font-black text-red-400">
-                                  OUT
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                                  Points:
                                 </span>
-                              ) : (
-                                <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => modifyPlayerPoints(side, idx, -1)}
+                                  disabled={isEnded || player.subbedOut || player.points <= 0}
+                                  className="rounded-lg bg-red-500/10 border border-red-500/30 px-2.5 py-1.5 text-xs font-black text-red-400 hover:bg-red-500/20 active:scale-95 transition disabled:opacity-30 cursor-pointer"
+                                >
+                                  -1
+                                </button>
+                                {[1, 2, 3].map((delta) => (
                                   <button
-                                    onClick={() => adjustPlayerFouls(side, idx, -1)}
-                                    disabled={isEnded || player.fouls <= 0}
-                                    className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                                    key={delta}
+                                    onClick={() => modifyPlayerPoints(side, idx, delta)}
+                                    disabled={isEnded || player.subbedOut}
+                                    className={`rounded-lg border px-3 py-1.5 text-xs font-black active:scale-95 transition disabled:opacity-50 cursor-pointer ${
+                                      delta === 3
+                                        ? "bg-gold-500/20 border-gold-500/30 text-gold-400 hover:bg-gold-500/30"
+                                        : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                                    }`}
                                   >
-                                    <Minus className="h-3 w-3" />
+                                    +{delta} {delta === 3 ? "ARC" : delta === 2 ? "PTS" : "PT"}
                                   </button>
-                                  <span className="w-5 text-center font-mono text-xs font-black text-amber-400">
-                                    {player.fouls}
+                                ))}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                  Fouls ({player.fouls}/5):
+                                </span>
+                                {player.fouls >= 5 ? (
+                                  <span className="rounded-lg bg-red-500/20 border border-red-500/30 px-2.5 py-1 text-[11px] font-black text-red-400">
+                                    OUT
                                   </span>
-                                  <button
-                                    onClick={() => adjustPlayerFouls(side, idx, 1)}
-                                    disabled={isEnded}
-                                    className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 cursor-pointer disabled:opacity-30"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              )}
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => adjustPlayerFouls(side, idx, -1)}
+                                      disabled={isEnded || player.fouls <= 0}
+                                      className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </button>
+                                    <span className="w-5 text-center font-mono text-xs font-black text-amber-400">
+                                      {player.fouls}
+                                    </span>
+                                    <button
+                                      onClick={() => adjustPlayerFouls(side, idx, 1)}
+                                      disabled={isEnded}
+                                      className="rounded-lg border border-white/10 bg-slate-900 p-1 text-slate-300 hover:bg-slate-800 cursor-pointer disabled:opacity-30"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

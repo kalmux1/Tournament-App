@@ -27,8 +27,12 @@ export default function Hub() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
       <header>
-        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-500">Live Tournament</span>
-        <h1 className="mt-3 font-display text-4xl font-bold text-white sm:text-5xl">Tournament Hub</h1>
+        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-500">
+          Live Tournament
+        </span>
+        <h1 className="mt-3 font-display text-4xl font-bold text-white sm:text-5xl">
+          Tournament Hub
+        </h1>
         <p className="mt-3 max-w-2xl text-slate-400">
           Schedule, pool standings, the knockout bracket, MVP race and every registered squad — all in one place.
         </p>
@@ -61,28 +65,41 @@ export default function Hub() {
             <Leaderboard />
           </div>
         )}
-        {tab === "teams" && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {teams.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setSelected(t)}
-                className="glass flex items-center gap-4 rounded-xl p-4 text-left transition hover:border-gold-500/40"
-              >
-                <TeamLogo team={t} size="lg" />
-                <div className="min-w-0">
-                  <div className="truncate font-display text-lg font-bold text-white">{t.name}</div>
-                  <div className="text-xs text-slate-400">
-                    {t.category} · Pool {t.pool}
+        {tab === "teams" &&
+          (teams.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
+              <h3 className="font-display text-xl font-bold text-white">No teams yet</h3>
+              <p className="mt-2 text-sm text-slate-400">
+                Registered teams will appear here once they sign up and are approved.
+              </p>
+              <a href="/register" className="btn-gold mt-6 inline-flex">
+                Register Your Team
+              </a>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {teams.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setSelected(t)}
+                  className="glass flex items-center gap-4 rounded-xl p-4 text-left transition hover:border-gold-500/40"
+                >
+                  <TeamLogo team={t} size="lg" />
+                  <div className="min-w-0">
+                    <div className="truncate font-display text-lg font-bold text-white">
+                      {t.name}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {t.category} · Pool {t.pool}
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-gold-500">
+                      {t.wins}W · {t.losses}L
+                    </div>
                   </div>
-                  <div className="mt-1 text-xs font-semibold text-gold-500">
-                    {t.wins}W · {t.losses}L
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+                </button>
+              ))}
+            </div>
+          ))}
       </div>
 
       {selected && <TeamModal team={selected} onClose={() => setSelected(null)} />}
