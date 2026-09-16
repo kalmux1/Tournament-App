@@ -1,5 +1,15 @@
 import { useState } from "react"
-import { Clock, Timer, Target, Zap, Repeat, Trophy, MapPin, Phone, Mail, Send } from "lucide-react"
+import {
+  Clock,
+  Timer,
+  Target,
+  Zap,
+  Repeat,
+  Trophy,
+  MapPin,
+  Mail,
+  Send,
+} from "lucide-react"
 import { TOURNAMENT } from "@/lib/mockData"
 
 const RULES = [
@@ -80,8 +90,9 @@ export default function Rules() {
               </form>
             )}
             <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-400">
-              <span className="flex items-center gap-1.5"><Mail className="h-4 w-4 text-gold-500" /> kal.mux.cyber@gmail.com</span>
-              <span className="flex items-center gap-1.5"><Phone className="h-4 w-4 text-gold-500" /> +91 90000 00000</span>
+              <span className="flex items-center gap-1.5">
+                <Mail className="h-4 w-4 text-gold-500" /> kal.mux.cyber@gmail.com
+              </span>
             </div>
           </div>
         </div>
