@@ -6,6 +6,8 @@ import {
   deleteDoc,
   setDoc,
   getDocs,
+  query,
+  where,
   serverTimestamp,
 } from "firebase/firestore"
 import { db, isFirebaseConfigured } from "@/lib/firebase"
@@ -228,7 +230,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  /** Admin-side: create a fully-specified team */
   const createTeam = async (teamData: Omit<Team, "id">) => {
     const newTeam: Team = { ...teamData, id: `team_${Date.now()}` }
     setTeams((prev) => {
@@ -249,7 +250,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  /** Admin-side: update any subset of team fields */
   const updateTeam = async (teamId: string, patch: Partial<Team>) => {
     setTeams((prev) => {
       const updated = prev.map((t) => (t.id === teamId ? { ...t, ...patch } : t))
@@ -266,17 +266,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  /** Admin-side: permanently remove a team */
+  /**
+   * Delete a team AND cascade-delete all related playerStats documents.
+   * Without this, deleted teams leave orphaned MVP-race entries.
+   */
   const deleteTeam = async (teamId: string) => {
+    // 1. Local state — remove team + related stats
     setTeams((prev) => {
       const updated = prev.filter((t) => t.id !== teamId)
       localStorage.setItem(KEY("teams"), JSON.stringify(updated))
       return updated
     })
+    setPlayerStats((prev) => {
+      const updated = prev.filter((ps) => ps.teamId !== teamId)
+      localStorage.setItem(KEY("player_stats"), JSON.stringify(updated))
+      return updated
+    })
+
+    // 2. Firestore — delete team doc + all playerStats with matching teamId
     if (db && isFirebaseConfigured && !useLocalOnly) {
       const firestore = db
       try {
+        // Delete the team
         await deleteDoc(doc(firestore, "teams", teamId))
+
+        // Cascade delete playerStats
+        const statsQuery = query(
+          collection(firestore, "playerStats"),
+          where("teamId", "==", teamId)
+        )
+        const statsSnap = await getDocs(statsQuery)
+        await Promise.all(statsSnap.docs.map((d) => deleteDoc(d.ref)))
+
+        console.log(
+          `[DataContext] Deleted team ${teamId} + ${statsSnap.docs.length} playerStats doc(s)`
+        )
       } catch (err) {
         fallbackToLocal(err)
       }
