@@ -29,6 +29,12 @@ const MASTER_ADMIN_EMAILS = [
   "contact@imrt.in",
 ]
 
+const MASTER_SCORER_EMAILS = [
+  "scorer@imrt.in",
+  "scorer1@imrt.in",
+  "table@imrt.in",
+]
+
 // Dev-only bypass. Disabled by default. Enable with VITE_DEV_AUTH_BYPASS=true.
 const DEV_AUTH_BYPASS = import.meta.env.VITE_DEV_AUTH_BYPASS === "true"
 
@@ -40,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resolveRole = async (currentUser: User): Promise<Role> => {
     const emailLower = (currentUser.email || "").toLowerCase().trim()
 
+    // Master admin
     if (MASTER_ADMIN_EMAILS.includes(emailLower)) {
       if (db && isFirebaseConfigured) {
         try {
@@ -57,6 +64,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       return "admin"
+    }
+
+    // Master scorer
+    if (MASTER_SCORER_EMAILS.includes(emailLower)) {
+      if (db && isFirebaseConfigured) {
+        try {
+          const ref = doc(db, "users", currentUser.uid)
+          const snap = await getDoc(ref)
+          if (!snap.exists() || snap.data()?.role !== "scorer") {
+            await setDoc(
+              ref,
+              { email: currentUser.email, role: "scorer", updatedAt: serverTimestamp() },
+              { merge: true }
+            )
+          }
+        } catch (e) {
+          console.error("[Auth] master-scorer sync failed:", e)
+        }
+      }
+      return "scorer"
     }
 
     if (!db || !isFirebaseConfigured) return "fan"

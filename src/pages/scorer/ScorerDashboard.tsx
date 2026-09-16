@@ -110,17 +110,6 @@ export default function ScorerDashboard() {
     setTimeout(() => setNotification(null), 2500)
   }
 
-  // Auth guard
-  useEffect(() => {
-    const isAuthed =
-      localStorage.getItem("imrt_scorer_auth") ||
-      localStorage.getItem("imrt_auth_role") === "scorer" ||
-      localStorage.getItem("imrt_auth_role") === "admin"
-    if (!isAuthed) {
-      navigate("/scorer/login")
-    }
-  }, [navigate])
-
   // Seed the match document on mount so setDoc merge has a place to land
   useEffect(() => {
     if (!db || !isFirebaseConfigured) return
@@ -215,9 +204,6 @@ export default function ScorerDashboard() {
 
   const handleLogout = async () => {
     await logout()
-    localStorage.removeItem("imrt_scorer_auth")
-    localStorage.removeItem("imrt_auth_role")
-    localStorage.removeItem("imrt_auth_email")
     navigate("/scorer/login", { replace: true })
   }
 
