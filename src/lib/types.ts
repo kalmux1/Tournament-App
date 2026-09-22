@@ -7,6 +7,8 @@ export type Category =
 
 export type MatchStatus = "upcoming" | "live" | "finished"
 
+export type MatchSource = "auto-league" | "auto-knockout" | "manual"
+
 export interface Player {
   name: string
   jersey: number
@@ -54,6 +56,9 @@ export interface Match {
   round?: string
   winnerId?: string
   venue?: string
+  /** Marks the origin of this match. Auto-generated matches are safe
+   *  to regenerate; manual ones are preserved. */
+  source?: MatchSource
 }
 
 export interface Scorer {
@@ -65,7 +70,6 @@ export interface Scorer {
   active: boolean
 }
 
-/** Separate entity for the MVP race — do NOT reuse Scorer. */
 export interface PlayerStat {
   id: string
   playerName: string

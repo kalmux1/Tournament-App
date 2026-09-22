@@ -5,3 +5,4 @@ dist/
 .env.production
 .firebase/
 .DS_Store
+service-account.json

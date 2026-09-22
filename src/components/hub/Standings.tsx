@@ -8,9 +8,9 @@ function sortTeams(a: Team, b: Team) {
 }
 
 export default function Standings({ onSelect }: { onSelect: (t: Team) => void }) {
-  const { teams } = useData()
+  const { approvedTeams } = useData()
 
-  if (teams.length === 0) {
+  if (approvedTeams.length === 0) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
         <h3 className="font-display text-xl font-bold text-white">No teams registered yet</h3>
@@ -21,12 +21,12 @@ export default function Standings({ onSelect }: { onSelect: (t: Team) => void })
     )
   }
 
-  const pools = Array.from(new Set(teams.map((t) => t.pool))).sort()
+  const pools = Array.from(new Set(approvedTeams.map((t) => t.pool))).sort()
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       {pools.map((pool) => {
-        const poolTeams = teams.filter((t) => t.pool === pool).sort(sortTeams)
+        const poolTeams = approvedTeams.filter((t) => t.pool === pool).sort(sortTeams)
         return (
           <div key={pool} className="glass overflow-hidden rounded-2xl">
             <div className="flex items-center gap-2 bg-maroon-800/40 px-5 py-3">

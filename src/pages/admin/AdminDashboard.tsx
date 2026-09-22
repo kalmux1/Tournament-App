@@ -5,10 +5,13 @@ import { useAuth } from "@/context/AuthContext"
 import type { Category, Match, Team } from "@/lib/types"
 import TeamFormModal from "@/components/admin/TeamFormModal"
 import DeleteConfirmModal from "@/components/common/DeleteConfirmModal"
+import BracketPanel from "@/components/admin/BracketPanel"
+import ExportPanel from "@/components/admin/ExportPanel"
+import MatchFormModal from "@/components/admin/MatchFormModal"
 import {
   Shield, Users, Calendar, Trophy, CheckCircle, XCircle, Plus, Trash2,
   MapPin, Activity, Settings, UserCheck, Clock, BarChart3, AlertCircle,
-  ArrowLeft, LogOut, Pencil, UserPlus,
+  ArrowLeft, LogOut, Pencil, UserPlus, GitFork, Download,
 } from "lucide-react"
 
 const CATEGORY_OPTIONS: Category[] = [
@@ -19,7 +22,14 @@ const CATEGORY_OPTIONS: Category[] = [
   "Inter-Department",
 ]
 
-type AdminTab = "overview" | "teams" | "schedule" | "scorers" | "tournament"
+type AdminTab =
+  | "overview"
+  | "teams"
+  | "schedule"
+  | "bracket"
+  | "scorers"
+  | "tournament"
+  | "export"
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -37,6 +47,9 @@ export default function AdminDashboard() {
   const [showTeamForm, setShowTeamForm] = useState(false)
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
+
+  // Match edit modal state
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null)
 
   // New match form state
   const [newCourt, setNewCourt] = useState("Court 1 (Main Arena)")
@@ -85,6 +98,7 @@ export default function AdminDashboard() {
       stage,
       pool,
       venue: tVenue,
+      source: "manual",
     })
     setNewTeamA("")
     setNewTeamB("")
@@ -174,8 +188,10 @@ export default function AdminDashboard() {
             badge: pendingTeamsCount > 0 ? pendingTeamsCount : undefined,
           },
           { id: "schedule" as const, label: `Matches (${matches.length})`, icon: Calendar },
+          { id: "bracket" as const, label: "Bracket", icon: GitFork },
           { id: "scorers" as const, label: `Scorers (${scorers.length})`, icon: UserCheck },
           { id: "tournament" as const, label: "Schedule & Venue", icon: Settings },
+          { id: "export" as const, label: "Export", icon: Download },
         ].map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
@@ -282,6 +298,12 @@ export default function AdminDashboard() {
                     </div>
                   )
                 })}
+                {matches.length === 0 && (
+                  <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center text-slate-400">
+                    <Calendar className="mx-auto h-8 w-8 text-gold-500 mb-2" />
+                    No matches scheduled yet. Use the Bracket tab to generate a league or knockout.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -547,40 +569,94 @@ export default function AdminDashboard() {
             {matches.map((m) => {
               const a = teams.find((t) => t.id === m.teamAId)
               const b = teams.find((t) => t.id === m.teamBId)
+              const sourceLabel =
+                m.source === "auto-league"
+                  ? "League"
+                  : m.source === "auto-knockout"
+                    ? "Knockout"
+                    : "Manual"
               return (
-                <div key={m.id} className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between">
+                <div
+                  key={m.id}
+                  className="glass rounded-3xl p-6 border border-white/10 flex flex-col justify-between transition hover:border-gold-500/40"
+                >
                   <div>
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-gold-500" /> {m.court}</span>
-                      <span className={`uppercase font-semibold px-2 py-0.5 rounded text-[10px] ${
-                        m.status === "live" ? "bg-red-500/20 text-red-400" : "bg-gold-500/10 text-gold-400"
-                      }`}>{m.status}</span>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-gold-500" /> {m.court}
+                      </span>
+                      <span
+                        className={`uppercase font-semibold px-2 py-0.5 rounded text-[10px] ${
+                          m.status === "live"
+                            ? "bg-red-500/20 text-red-400"
+                            : m.status === "finished"
+                              ? "bg-white/10 text-slate-400"
+                              : "bg-gold-500/10 text-gold-400"
+                        }`}
+                      >
+                        {m.status}
+                      </span>
                     </div>
-                    <div className="mt-4 font-display text-lg font-bold text-white">
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="rounded-md bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        {sourceLabel}
+                      </span>
+                      {m.stage && m.stage !== "pool" && (
+                        <span className="rounded-md bg-gold-500/10 border border-gold-500/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold-400">
+                          {m.stage}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-3 font-display text-lg font-bold text-white">
                       {a?.name || "TBD"} vs {b?.name || "TBD"}
                     </div>
                     <div className="mt-1 text-xs text-slate-400 flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" /> {m.date} at {m.time} • {m.round}
+                      <Clock className="h-3.5 w-3.5" /> {m.date} at {m.time}
+                      {m.round ? ` • ${m.round}` : ""}
                     </div>
+
                     <div className="mt-4 rounded-xl bg-white/5 p-3 flex justify-between items-center text-sm font-bold text-gold-400">
                       <span>Score</span>
-                      <span>{m.scoreA} - {m.scoreB}</span>
+                      <span>
+                        {m.scoreA} - {m.scoreB}
+                      </span>
                     </div>
                   </div>
-                  <div className="mt-6 pt-4 border-t border-white/10 flex justify-end">
+
+                  <div className="mt-6 pt-4 border-t border-white/10 flex gap-2">
+                    <button
+                      onClick={() => setEditingMatch(m)}
+                      className="flex-1 rounded-xl bg-gold-500/10 hover:bg-gold-500/20 py-2.5 text-xs font-semibold text-gold-400 transition flex items-center justify-center gap-1.5 border border-gold-500/20"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
                     <button
                       onClick={() => deleteMatch(m.id)}
-                      className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition"
+                      className="flex-1 rounded-xl bg-red-500/10 hover:bg-red-500/20 py-2.5 text-xs font-semibold text-red-400 transition flex items-center justify-center gap-1.5 border border-red-500/20"
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> Delete Match
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
                     </button>
                   </div>
                 </div>
               )
             })}
+            {matches.length === 0 && (
+              <div className="col-span-full rounded-3xl border border-white/10 bg-white/5 px-6 py-16 text-center">
+                <Calendar className="mx-auto h-10 w-10 text-gold-500 mb-3" />
+                <h3 className="font-display text-xl font-bold text-white">No matches yet</h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Schedule matches above, or auto-generate a full tournament in the Bracket tab.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* BRACKET TAB */}
+      {activeTab === "bracket" && <BracketPanel />}
 
       {/* SCORERS TAB */}
       {activeTab === "scorers" && (
@@ -638,6 +714,12 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
+            {scorers.length === 0 && (
+              <div className="col-span-full rounded-3xl border border-white/10 bg-white/5 px-6 py-12 text-center text-slate-400">
+                <UserCheck className="mx-auto h-8 w-8 text-gold-500 mb-2" />
+                No scorers assigned yet. Use the form above to add one.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -684,6 +766,9 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* EXPORT TAB */}
+      {activeTab === "export" && <ExportPanel />}
+
       {/* Team form modal */}
       {showTeamForm && (
         <TeamFormModal
@@ -693,6 +778,14 @@ export default function AdminDashboard() {
             setShowTeamForm(false)
             setEditingTeam(null)
           }}
+        />
+      )}
+
+      {/* Match edit modal */}
+      {editingMatch && (
+        <MatchFormModal
+          match={editingMatch}
+          onClose={() => setEditingMatch(null)}
         />
       )}
 

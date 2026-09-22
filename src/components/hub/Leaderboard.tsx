@@ -3,9 +3,15 @@ import TeamLogo from "@/components/TeamLogo"
 import { useData } from "@/context/DataContext"
 
 export default function Leaderboard() {
-  const { playerStats, getTeam } = useData()
-  const ranked = [...playerStats].sort((a, b) => b.points - a.points)
+  const { playerStats, approvedTeams } = useData()
+
+  // Only show MVP entries whose team is approved & visible publicly.
+  const approvedIds = new Set(approvedTeams.map((t) => t.id))
+  const visible = playerStats.filter((s) => approvedIds.has(s.teamId))
+  const ranked = [...visible].sort((a, b) => b.points - a.points)
   const max = ranked[0]?.points ?? 1
+
+  const teamById = (id: string) => approvedTeams.find((t) => t.id === id)
 
   return (
     <div className="glass overflow-hidden rounded-2xl">
@@ -20,7 +26,7 @@ export default function Leaderboard() {
       ) : (
         <ul className="divide-y divide-white/5">
           {ranked.map((s, i) => {
-            const team = getTeam(s.teamId)
+            const team = teamById(s.teamId)
             const ppg = s.games > 0 ? s.points / s.games : 0
             return (
               <li key={s.id} className="flex items-center gap-4 px-6 py-3">

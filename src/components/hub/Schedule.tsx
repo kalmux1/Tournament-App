@@ -10,6 +10,16 @@ const FILTERS: { key: MatchStatus | "all"; label: string }[] = [
   { key: "finished", label: "Finished" },
 ]
 
+/**
+ * Parse a "YYYY-MM-DD" string as a LOCAL date.
+ * new Date("2026-09-27") parses as UTC midnight and shifts the day
+ * in negative-offset timezones. Splitting avoids that.
+ */
+function parseLocalDate(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number)
+  return new Date(y, (m || 1) - 1, d || 1)
+}
+
 export default function Schedule() {
   const { matches } = useData()
   const [filter, setFilter] = useState<MatchStatus | "all">("all")
@@ -25,7 +35,9 @@ export default function Schedule() {
             key={f.key}
             onClick={() => setFilter(f.key)}
             className={`rounded-full px-4 py-1.5 font-display text-xs font-semibold uppercase tracking-wider transition ${
-              filter === f.key ? "bg-gold-500 text-slate-950" : "border border-white/15 text-slate-300 hover:bg-white/10"
+              filter === f.key
+                ? "bg-gold-500 text-slate-950"
+                : "border border-white/15 text-slate-300 hover:bg-white/10"
             }`}
           >
             {f.label}
@@ -44,7 +56,11 @@ export default function Schedule() {
           <div key={date}>
             <h4 className="mb-4 flex items-center gap-3 font-display text-sm font-bold uppercase tracking-wider text-slate-300">
               <span className="h-2 w-2 rounded-full bg-gold-500" />
-              {new Date(date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              {parseLocalDate(date).toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
             </h4>
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
               {filtered

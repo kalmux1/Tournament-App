@@ -22,7 +22,7 @@ type TabKey = (typeof TABS)[number]["key"]
 export default function Hub() {
   const [tab, setTab] = useState<TabKey>("schedule")
   const [selected, setSelected] = useState<Team | null>(null)
-  const { teams } = useData()
+  const { approvedTeams } = useData()
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
@@ -66,7 +66,7 @@ export default function Hub() {
           </div>
         )}
         {tab === "teams" &&
-          (teams.length === 0 ? (
+          (approvedTeams.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
               <h3 className="font-display text-xl font-bold text-white">No teams yet</h3>
               <p className="mt-2 text-sm text-slate-400">
@@ -78,7 +78,7 @@ export default function Hub() {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {teams.map((t) => (
+              {approvedTeams.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setSelected(t)}

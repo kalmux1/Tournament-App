@@ -60,7 +60,8 @@ export default function Register() {
       const code = genCode()
 
       // Single source of truth: DataContext owns Firestore + local persistence.
-      await addTeam({
+      // addTeam now returns the actual persisted Team (with real id).
+      const created = await addTeam({
         code,
         name: name.trim(),
         color,
@@ -70,21 +71,7 @@ export default function Register() {
         roster,
       })
 
-      setDone({
-        id: `t_${Date.now()}`,
-        code,
-        name: name.trim(),
-        color,
-        category,
-        pool: "TBD",
-        captain,
-        roster,
-        wins: 0,
-        losses: 0,
-        pointsFor: 0,
-        pointsAgainst: 0,
-        approved: false,
-      })
+      setDone(created)
     } catch (err) {
       console.error("Registration error:", err)
     } finally {

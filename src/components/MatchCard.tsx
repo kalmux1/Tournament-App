@@ -1,7 +1,7 @@
 import { MapPin, Clock } from "lucide-react"
 import TeamLogo from "./TeamLogo"
 import { useData } from "@/context/DataContext"
-import type { Match } from "@/lib/types"
+import type { Match, Team } from "@/lib/types"
 
 const STATUS_STYLE: Record<Match["status"], string> = {
   live: "animate-pulse-glow bg-red-600 text-white",
@@ -9,14 +9,37 @@ const STATUS_STYLE: Record<Match["status"], string> = {
   upcoming: "bg-gold-500/20 text-gold-500",
 }
 
+const TBD_TEAM: Team = {
+  id: "TBD",
+  code: "TBD",
+  name: "TBD",
+  color: "#334155",
+  category: "Men's Open",
+  pool: "TBD",
+  captain: { name: "", email: "", phone: "", studentId: "" },
+  roster: [],
+  wins: 0,
+  losses: 0,
+  pointsFor: 0,
+  pointsAgainst: 0,
+  approved: false,
+}
+
 export default function MatchCard({ match }: { match: Match }) {
   const { getTeam } = useData()
-  const a = getTeam(match.teamAId)
-  const b = getTeam(match.teamBId)
-  if (!a || !b) return null
 
-  const aWon = match.status === "finished" && match.winnerId === a.id
-  const bWon = match.status === "finished" && match.winnerId === b.id
+  const resolveTeam = (id: string): { team: Team; isPlaceholder: boolean } => {
+    if (id === "TBD") return { team: TBD_TEAM, isPlaceholder: true }
+    const t = getTeam(id)
+    if (!t) return { team: TBD_TEAM, isPlaceholder: true }
+    return { team: t, isPlaceholder: false }
+  }
+
+  const { team: a, isPlaceholder: aTbd } = resolveTeam(match.teamAId)
+  const { team: b, isPlaceholder: bTbd } = resolveTeam(match.teamBId)
+
+  const aWon = !aTbd && match.status === "finished" && match.winnerId === a.id
+  const bWon = !bTbd && match.status === "finished" && match.winnerId === b.id
 
   return (
     <div className="glass overflow-hidden rounded-xl transition hover:border-gold-500/40">
@@ -35,7 +58,14 @@ export default function MatchCard({ match }: { match: Match }) {
       </div>
 
       <div className="space-y-3 px-4 py-4">
-        <TeamRow name={a.name} logo={a} score={match.scoreA} won={aWon} dim={match.status !== "upcoming"} />
+        <TeamRow
+          name={a.name}
+          logo={a}
+          score={match.scoreA}
+          won={aWon}
+          dim={match.status !== "upcoming"}
+          isPlaceholder={aTbd}
+        />
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-white/10" />
           <span className="font-display text-[11px] font-semibold uppercase tracking-widest text-slate-500">
@@ -43,7 +73,14 @@ export default function MatchCard({ match }: { match: Match }) {
           </span>
           <div className="h-px flex-1 bg-white/10" />
         </div>
-        <TeamRow name={b.name} logo={b} score={match.scoreB} won={bWon} dim={match.status !== "upcoming"} />
+        <TeamRow
+          name={b.name}
+          logo={b}
+          score={match.scoreB}
+          won={bWon}
+          dim={match.status !== "upcoming"}
+          isPlaceholder={bTbd}
+        />
       </div>
     </div>
   )
@@ -55,21 +92,35 @@ function TeamRow({
   score,
   won,
   dim,
+  isPlaceholder,
 }: {
   name: string
   logo: { name: string; logo?: string; color: string }
   score: number
   won: boolean
   dim: boolean
+  isPlaceholder: boolean
 }) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <TeamLogo team={logo} size="md" />
-        <span className={`font-display text-sm font-semibold ${won ? "text-gold-500" : "text-white"}`}>{name}</span>
+        <span
+          className={`font-display text-sm font-semibold ${
+            isPlaceholder ? "text-slate-500 italic" : won ? "text-gold-500" : "text-white"
+          }`}
+        >
+          {name}
+        </span>
       </div>
-      {dim ? (
-        <span className={`font-display text-2xl font-bold tabular-nums ${won ? "text-gold-500" : "text-slate-300"}`}>
+      {isPlaceholder ? (
+        <span className="font-display text-sm text-slate-500">—</span>
+      ) : dim ? (
+        <span
+          className={`font-display text-2xl font-bold tabular-nums ${
+            won ? "text-gold-500" : "text-slate-300"
+          }`}
+        >
           {score}
         </span>
       ) : (

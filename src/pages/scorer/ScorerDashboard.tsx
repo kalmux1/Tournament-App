@@ -25,7 +25,14 @@ import {
 import { useAuth } from "@/context/AuthContext"
 import { useData } from "@/context/DataContext"
 import type { Player, Match, MatchStatus, Category } from "@/lib/types"
-import { doc, setDoc, onSnapshot, serverTimestamp, increment } from "firebase/firestore"
+import {
+  doc,
+  setDoc,
+  onSnapshot,
+  serverTimestamp,
+  increment,
+  writeBatch,
+} from "firebase/firestore"
 import { db, isFirebaseConfigured } from "@/lib/firebase"
 
 interface LivePlayer extends Player {
@@ -86,6 +93,22 @@ const EMPTY_STATE: LiveGameState = {
 
 const STORAGE_KEY = "imrt_v2_live_game"
 
+/**
+ * Fields that get written to Firestore. Clocks are intentionally excluded —
+ * they tick once per second locally and would otherwise cause a Firestore
+ * write storm. They persist to localStorage so a page reload keeps position.
+ */
+function toSyncPayload(state: LiveGameState) {
+  const {
+    gameTime: _gt,
+    isGameRunning: _igr,
+    shotTime: _st,
+    isShotRunning: _isr,
+    ...rest
+  } = state
+  return rest
+}
+
 export default function ScorerDashboard() {
   const navigate = useNavigate()
   const { logout } = useAuth()
@@ -111,11 +134,14 @@ export default function ScorerDashboard() {
   const lastRemoteWriteRef = useRef<number>(0)
   const applyingRemoteRef = useRef<boolean>(false)
   const hasFinalizedRef = useRef<boolean>(false)
+  // Snapshot of the last payload we actually pushed to Firestore. Used to
+  // short-circuit no-op writes when the debounced effect re-runs with an
+  // object that is referentially new but content-identical.
+  const lastSyncedJsonRef = useRef<string>("")
 
   const isEnded = gameState.status === "finished"
   const hasMatch = Boolean(gameState.matchId)
 
-  // Matches the scorer can run — upcoming or live
   const selectableMatches = useMemo(
     () => matches.filter((m) => m.status === "upcoming" || m.status === "live"),
     [matches]
@@ -126,7 +152,6 @@ export default function ScorerDashboard() {
     setTimeout(() => setNotification(null), 2500)
   }
 
-  // Load a scheduled match into the scorer state
   const loadMatch = (matchId: string) => {
     const match = matches.find((m) => m.id === matchId)
     if (!match) return
@@ -183,50 +208,101 @@ export default function ScorerDashboard() {
         if (!snap.exists()) return
         if (Date.now() - lastLocalEditRef.current < 1000) return
         const data = snap.data() as Partial<LiveGameState> & { updatedAt?: unknown }
-        const { updatedAt, ...rest } = data
+        const { updatedAt: _u, ...rest } = data
         lastRemoteWriteRef.current = Date.now()
         applyingRemoteRef.current = true
-        setGameState((prev) => ({ ...prev, ...rest }))
+        // Preserve local-only clocks while accepting remote score/roster changes.
+        setGameState((prev) => ({
+          ...prev,
+          ...rest,
+          gameTime: prev.gameTime,
+          isGameRunning: prev.isGameRunning,
+          shotTime: prev.shotTime,
+          isShotRunning: prev.isShotRunning,
+        }))
       },
       (err) => console.error("[Scorer] Firestore listen error:", err)
     )
     return () => unsub()
   }, [gameState.matchId])
 
-  // Persist to localStorage
+  // Persist everything (including clocks) to localStorage for reload safety.
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState))
   }, [gameState])
 
-  // Debounced sync to Firestore — only when a match is selected
+  // Debounced Firestore sync — triggered ONLY by meaningful state changes.
+  //
+  // We intentionally do NOT depend on `gameState` here. The clock effects
+  // produce a brand new state object every second; depending on that object
+  // would re-create `syncPayload` on every tick and fire a Firestore write
+  // every ~400ms for the duration of the game. Instead we list the fields
+  // that actually go over the wire. Array references (rosterA/rosterB) are
+  // preserved across clock ticks because the tick handlers use spreads that
+  // only replace `gameTime`/`shotTime`, so this dep list is stable.
+  const syncPayload = useMemo(
+    () => toSyncPayload(gameState),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      gameState.matchId,
+      gameState.teamAId,
+      gameState.teamBId,
+      gameState.teamAName,
+      gameState.teamBName,
+      gameState.teamAColor,
+      gameState.teamBColor,
+      gameState.scoreA,
+      gameState.scoreB,
+      gameState.foulsA,
+      gameState.foulsB,
+      gameState.period,
+      gameState.rosterA,
+      gameState.rosterB,
+      gameState.status,
+      gameState.stage,
+      gameState.date,
+      gameState.time,
+      gameState.court,
+      gameState.category,
+      gameState.winnerId,
+      gameState.endedAt,
+    ]
+  )
+
   useEffect(() => {
     if (!hasMatch || !db || !isFirebaseConfigured) return
-    const firestore = db
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false
       return
     }
     if (Date.now() - lastRemoteWriteRef.current < 750) return
 
+    // Skip if nothing actually changed since the last write.
+    const json = JSON.stringify(syncPayload)
+    if (json === lastSyncedJsonRef.current) return
+
     lastLocalEditRef.current = Date.now()
+    const firestore = db
     const timer = setTimeout(async () => {
       try {
         await setDoc(
           doc(firestore, "matches", gameState.matchId!),
-          { ...gameState, updatedAt: serverTimestamp() },
+          { ...syncPayload, updatedAt: serverTimestamp() },
           { merge: true }
         )
+        lastSyncedJsonRef.current = json
       } catch (err) {
         console.error("[Scorer] Firestore sync error:", err)
       }
-    }, 300)
+    }, 400)
 
     return () => clearTimeout(timer)
-  }, [gameState, hasMatch])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncPayload, hasMatch, gameState.matchId])
 
-  // Game clock
+  // Game clock (local-only — not synced)
   useEffect(() => {
-    let interval: any = null
+    let interval: ReturnType<typeof setInterval> | null = null
     if (gameState.isGameRunning && gameState.gameTime > 0) {
       interval = setInterval(() => {
         setGameState((prev) => ({
@@ -236,12 +312,14 @@ export default function ScorerDashboard() {
         }))
       }, 1000)
     }
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [gameState.isGameRunning, gameState.gameTime])
 
-  // Shot clock
+  // Shot clock (local-only — not synced)
   useEffect(() => {
-    let interval: any = null
+    let interval: ReturnType<typeof setInterval> | null = null
     if (gameState.isShotRunning && gameState.shotTime > 0) {
       interval = setInterval(() => {
         setGameState((prev) => ({
@@ -251,7 +329,9 @@ export default function ScorerDashboard() {
         }))
       }, 1000)
     }
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [gameState.isShotRunning, gameState.shotTime])
 
   const handleLogout = async () => {
@@ -271,11 +351,13 @@ export default function ScorerDashboard() {
     }
     const firestore = db
     try {
+      const json = JSON.stringify(syncPayload)
       await setDoc(
         doc(firestore, "matches", gameState.matchId),
-        { ...gameState, updatedAt: serverTimestamp() },
+        { ...syncPayload, updatedAt: serverTimestamp() },
         { merge: true }
       )
+      lastSyncedJsonRef.current = json
       lastLocalEditRef.current = Date.now()
       showNotice("Scoreboard saved to Firestore")
     } catch (err) {
@@ -284,7 +366,7 @@ export default function ScorerDashboard() {
     }
   }
 
-  // --- End Match ---
+  // --- End Match (atomic batch write) ---
   const confirmEndMatch = async () => {
     if (hasFinalizedRef.current || !gameState.matchId || gameState.status === "finished") {
       setShowEndMatchModal(false)
@@ -312,19 +394,21 @@ export default function ScorerDashboard() {
     setGameState(finalState)
     setShowEndMatchModal(false)
 
-    if (db && isFirebaseConfigured) {
+    if (db && isFirebaseConfigured && gameState.matchId) {
       const firestore = db
       try {
-        // 1. Finalize the match doc
-        await setDoc(
+        const batch = writeBatch(firestore)
+
+        // 1. Finalize match doc
+        batch.set(
           doc(firestore, "matches", gameState.matchId),
-          { ...finalState, updatedAt: serverTimestamp() },
+          { ...toSyncPayload(finalState), updatedAt: serverTimestamp() },
           { merge: true }
         )
 
-        // 2. Update team standings
+        // 2. Team standings
         if (teamA) {
-          await setDoc(
+          batch.set(
             doc(firestore, "teams", teamA.id),
             {
               wins: teamA.wins + (winnerIsA ? 1 : 0),
@@ -336,7 +420,7 @@ export default function ScorerDashboard() {
           )
         }
         if (teamB) {
-          await setDoc(
+          batch.set(
             doc(firestore, "teams", teamB.id),
             {
               wins: teamB.wins + (winnerIsB ? 1 : 0),
@@ -348,7 +432,7 @@ export default function ScorerDashboard() {
           )
         }
 
-        // 3. Update playerStats (MVP race) — accumulate across matches
+        // 3. Player stats (MVP race) — accumulative increments
         const scorersToWrite: Array<{ player: LivePlayer; teamId: string }> = []
         if (teamA) {
           finalState.rosterA.forEach((p) => {
@@ -363,7 +447,7 @@ export default function ScorerDashboard() {
 
         for (const { player, teamId } of scorersToWrite) {
           const statId = `${teamId}_${player.jersey}_${player.name.replace(/\s+/g, "_")}`
-          await setDoc(
+          batch.set(
             doc(firestore, "playerStats", statId),
             {
               playerName: player.name,
@@ -374,8 +458,12 @@ export default function ScorerDashboard() {
             { merge: true }
           )
         }
+
+        await batch.commit()
+        lastLocalEditRef.current = Date.now()
       } catch (err) {
         console.error("[Scorer] end match failed:", err)
+        hasFinalizedRef.current = false
         showNotice("End match failed — check console")
         return
       }
@@ -388,7 +476,78 @@ export default function ScorerDashboard() {
     )
   }
 
+  // --- Reopen Match (reverts standings + playerStats) ---
   const reopenMatch = async () => {
+    if (!gameState.matchId) return
+
+    const teamA = teams.find((t) => t.id === gameState.teamAId)
+    const teamB = teams.find((t) => t.id === gameState.teamBId)
+    const winnerIsA = gameState.winnerId === teamA?.id
+    const winnerIsB = gameState.winnerId === teamB?.id
+
+    if (db && isFirebaseConfigured) {
+      const firestore = db
+      try {
+        const batch = writeBatch(firestore)
+
+        if (teamA) {
+          batch.set(
+            doc(firestore, "teams", teamA.id),
+            {
+              wins: Math.max(0, teamA.wins - (winnerIsA ? 1 : 0)),
+              losses: Math.max(0, teamA.losses - (winnerIsB ? 1 : 0)),
+              pointsFor: Math.max(0, teamA.pointsFor - gameState.scoreA),
+              pointsAgainst: Math.max(0, teamA.pointsAgainst - gameState.scoreB),
+            },
+            { merge: true }
+          )
+        }
+        if (teamB) {
+          batch.set(
+            doc(firestore, "teams", teamB.id),
+            {
+              wins: Math.max(0, teamB.wins - (winnerIsB ? 1 : 0)),
+              losses: Math.max(0, teamB.losses - (winnerIsA ? 1 : 0)),
+              pointsFor: Math.max(0, teamB.pointsFor - gameState.scoreB),
+              pointsAgainst: Math.max(0, teamB.pointsAgainst - gameState.scoreA),
+            },
+            { merge: true }
+          )
+        }
+
+        // Decrement MVP stats for every scorer we recorded
+        const rosters: Array<{ player: LivePlayer; teamId?: string }> = [
+          ...gameState.rosterA.map((p) => ({ player: p, teamId: teamA?.id })),
+          ...gameState.rosterB.map((p) => ({ player: p, teamId: teamB?.id })),
+        ]
+        for (const { player, teamId } of rosters) {
+          if (!teamId || player.points <= 0) continue
+          const statId = `${teamId}_${player.jersey}_${player.name.replace(/\s+/g, "_")}`
+          batch.set(
+            doc(firestore, "playerStats", statId),
+            {
+              points: increment(-player.points),
+              games: increment(-1),
+            },
+            { merge: true }
+          )
+        }
+
+        batch.set(
+          doc(firestore, "matches", gameState.matchId),
+          { status: "live", winnerId: null, endedAt: null, updatedAt: serverTimestamp() },
+          { merge: true }
+        )
+
+        await batch.commit()
+        lastLocalEditRef.current = Date.now()
+      } catch (err) {
+        console.error("[Scorer] reopen failed:", err)
+        showNotice("Reopen failed — check console")
+        return
+      }
+    }
+
     hasFinalizedRef.current = false
     setGameState((prev) => ({
       ...prev,
@@ -396,7 +555,7 @@ export default function ScorerDashboard() {
       winnerId: undefined,
       endedAt: undefined,
     }))
-    showNotice("Match reopened — you can edit scores again")
+    showNotice("Match reopened — standings and MVP stats reverted")
   }
 
   // --- Timers ---
@@ -438,6 +597,9 @@ export default function ScorerDashboard() {
 
   const modifyPlayerPoints = (team: "A" | "B", playerIndex: number, delta: number) => {
     if (isEnded || !hasMatch) return
+    // FIBA 3x3: only 1- and 2-point baskets exist. Guard against any future
+    // caller (or stale UI) trying to add 3.
+    if (delta !== 1 && delta !== 2 && delta !== -1) return
     const rosterKey = team === "A" ? "rosterA" : "rosterB"
     const scoreKey = team === "A" ? "scoreA" : "scoreB"
     setGameState((prev) => {
@@ -820,21 +982,30 @@ export default function ScorerDashboard() {
                   <h2 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight">
                     {gameState.teamAName}
                   </h2>
-                  <div className="flex items-center justify-center gap-2 pt-1">
+                  <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
                     <span className="text-xs text-slate-400 font-medium">Direct Score:</span>
                     <button
                       onClick={() => adjustTeamScoreDirect("A", -1)}
                       disabled={isEnded}
                       className="rounded-lg bg-red-500/20 border border-red-500/30 px-3 py-1 text-xs font-black text-red-400 hover:bg-red-500/30 transition shadow cursor-pointer disabled:opacity-30"
                     >
-                      -1 PT
+                      -1
                     </button>
                     <button
                       onClick={() => adjustTeamScoreDirect("A", 1)}
                       disabled={isEnded}
+                      title="Inside the arc (1 point)"
                       className="rounded-lg bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 text-xs font-black text-emerald-400 hover:bg-emerald-500/30 transition shadow cursor-pointer disabled:opacity-30"
                     >
                       +1 PT
+                    </button>
+                    <button
+                      onClick={() => adjustTeamScoreDirect("A", 2)}
+                      disabled={isEnded}
+                      title="Behind the arc (2 points)"
+                      className="rounded-lg bg-gold-500/20 border border-gold-500/30 px-3 py-1 text-xs font-black text-gold-400 hover:bg-gold-500/30 transition shadow cursor-pointer disabled:opacity-30"
+                    >
+                      +2 ARC
                     </button>
                   </div>
                   <div className="flex items-center justify-center gap-2 text-xs font-medium text-slate-400">
@@ -869,21 +1040,30 @@ export default function ScorerDashboard() {
                   <h2 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight">
                     {gameState.teamBName}
                   </h2>
-                  <div className="flex items-center justify-center gap-2 pt-1">
+                  <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
                     <span className="text-xs text-slate-400 font-medium">Direct Score:</span>
                     <button
                       onClick={() => adjustTeamScoreDirect("B", -1)}
                       disabled={isEnded}
                       className="rounded-lg bg-red-500/20 border border-red-500/30 px-3 py-1 text-xs font-black text-red-400 hover:bg-red-500/30 transition shadow cursor-pointer disabled:opacity-30"
                     >
-                      -1 PT
+                      -1
                     </button>
                     <button
                       onClick={() => adjustTeamScoreDirect("B", 1)}
                       disabled={isEnded}
+                      title="Inside the arc (1 point)"
                       className="rounded-lg bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 text-xs font-black text-emerald-400 hover:bg-emerald-500/30 transition shadow cursor-pointer disabled:opacity-30"
                     >
                       +1 PT
+                    </button>
+                    <button
+                      onClick={() => adjustTeamScoreDirect("B", 2)}
+                      disabled={isEnded}
+                      title="Behind the arc (2 points)"
+                      className="rounded-lg bg-gold-500/20 border border-gold-500/30 px-3 py-1 text-xs font-black text-gold-400 hover:bg-gold-500/30 transition shadow cursor-pointer disabled:opacity-30"
+                    >
+                      +2 ARC
                     </button>
                   </div>
                   <div className="flex items-center justify-center gap-2 text-xs font-medium text-slate-400">
@@ -1106,18 +1286,25 @@ export default function ScorerDashboard() {
                                 >
                                   -1
                                 </button>
-                                {[1, 2, 3].map((delta) => (
+                                {/* FIBA 3x3: 1 point inside the arc, 2 points behind it.
+                                    There is no 3-point basket. */}
+                                {[1, 2].map((delta) => (
                                   <button
                                     key={delta}
                                     onClick={() => modifyPlayerPoints(side, idx, delta)}
                                     disabled={isEnded || player.subbedOut}
+                                    title={
+                                      delta === 2
+                                        ? "Behind the arc (2 points)"
+                                        : "Inside the arc (1 point)"
+                                    }
                                     className={`rounded-lg border px-3 py-1.5 text-xs font-black active:scale-95 transition disabled:opacity-50 cursor-pointer ${
-                                      delta === 3
+                                      delta === 2
                                         ? "bg-gold-500/20 border-gold-500/30 text-gold-400 hover:bg-gold-500/30"
                                         : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
                                     }`}
                                   >
-                                    +{delta} {delta === 3 ? "ARC" : delta === 2 ? "PTS" : "PT"}
+                                    +{delta} {delta === 2 ? "ARC" : "PT"}
                                   </button>
                                 ))}
                               </div>
