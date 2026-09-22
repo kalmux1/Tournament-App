@@ -88,7 +88,7 @@ const EMPTY_STATE: LiveGameState = {
   shotClockPreset: 12,
   rosterA: [],
   rosterB: [],
-  status: "live",
+  status: "upcoming",
 }
 
 const STORAGE_KEY = "imrt_v2_live_game"
@@ -101,8 +101,8 @@ const STORAGE_KEY = "imrt_v2_live_game"
  * Fields the admin owns — status, winnerId, endedAt, court, date, time,
  * category, stage, teamAId/BId, teamA/BName, teamA/BColor — are
  * intentionally EXCLUDED so an admin edit can never be clobbered by a
- * routine scorer sync. Transitions the scorer *does* initiate (ending or
- * reopening a match) write those fields explicitly in their own batch.
+ * routine scorer sync. Transitions the scorer *does* initiate (going live,
+ * ending, reopening) write those fields explicitly in their own calls.
  */
 function toSyncPayload(state: LiveGameState) {
   return {
@@ -142,6 +142,10 @@ export default function ScorerDashboard() {
   // onSnapshot, we don't want to immediately write the same payload again.
   const lastRemoteAppliedRef = useRef<number>(0)
   const hasFinalizedRef = useRef<boolean>(false)
+  // Guards the "push status: live" write so it fires at most once per
+  // match session. Reset on loadMatch (for an upcoming match), reopenMatch,
+  // and confirmResetEntireGame.
+  const hasGoneLiveRef = useRef<boolean>(false)
   // Snapshot of the last payload we actually pushed to Firestore. Lets us
   // skip writes that are content-identical to the last successful one.
   const lastSyncedJsonRef = useRef<string>("")
@@ -194,7 +198,9 @@ export default function ScorerDashboard() {
       shotClockPreset: 12,
       rosterA: buildRoster(teamA?.roster),
       rosterB: buildRoster(teamB?.roster),
-      status: match.status === "finished" ? "finished" : "live",
+      // Preserve the actual document status. It will be promoted to "live"
+      // the moment the scorer starts the clock or records a score.
+      status: match.status,
       stage: match.stage,
       date: match.date,
       time: match.time,
@@ -202,15 +208,62 @@ export default function ScorerDashboard() {
       category: match.category,
     }
 
+    // If the match is already live on the server, we shouldn't try to
+    // push "live" again on the next scoring action.
+    hasGoneLiveRef.current = match.status === "live" || match.status === "finished"
+    hasFinalizedRef.current = match.status === "finished"
+
     // Prime the sync guard so loading a match doesn't immediately write
     // an identical payload back to Firestore.
     lastSyncedJsonRef.current = JSON.stringify(toSyncPayload(nextState))
-    hasFinalizedRef.current = false
+
     setGameState(nextState)
     showNotice(`Loaded: ${teamA?.name} vs ${teamB?.name}`)
   }
 
-  // Realtime mirror of the selected match doc. We apply everything the
+  /**
+   * Promote the match from "upcoming" to "live" and broadcast it to every
+   * other surface (public Hub, ticker, admin dashboard, other scorers).
+   * Safe to call on every scoring action — it no-ops after the first
+   * successful transition.
+   */
+  const markMatchLive = async () => {
+    if (!gameState.matchId) return
+    // Already live, or already pushed this session, or match is over.
+    if (gameState.status === "live") {
+      hasGoneLiveRef.current = true
+      return
+    }
+    if (hasGoneLiveRef.current) return
+    if (gameState.status === "finished") return
+
+    // Claim the transition synchronously so concurrent calls can't both
+    // fire a write.
+    hasGoneLiveRef.current = true
+    setGameState((prev) => ({ ...prev, status: "live" }))
+
+    if (!db || !isFirebaseConfigured) {
+      showNotice("Match is now LIVE (offline)")
+      return
+    }
+
+    try {
+      await setDoc(
+        doc(db, "matches", gameState.matchId),
+        { status: "live", updatedAt: serverTimestamp() },
+        { merge: true }
+      )
+      lastRemoteAppliedRef.current = Date.now()
+      showNotice("Match is now LIVE")
+    } catch (err) {
+      console.error("[Scorer] failed to mark match live:", err)
+      // Roll back so a later scoring action can retry.
+      hasGoneLiveRef.current = false
+      showNotice("Failed to publish LIVE — check console")
+    }
+  }
+
+  // Realtime mirror of the selected match doc. Applies everything the
   // server sends EXCEPT the local-only clocks, which the scorer keeps in
   // its own state so a reload doesn't reset them.
   useEffect(() => {
@@ -232,6 +285,14 @@ export default function ScorerDashboard() {
           shotTime: prev.shotTime,
           isShotRunning: prev.isShotRunning,
         }))
+        // If the server says we're live (or finished), keep the guard in
+        // sync so we never re-push "live" over a finished match.
+        if (rest.status === "live" || rest.status === "finished") {
+          hasGoneLiveRef.current = true
+        }
+        if (rest.status === "finished") {
+          hasFinalizedRef.current = true
+        }
       },
       (err) => console.error("[Scorer] Firestore listen error:", err)
     )
@@ -380,6 +441,7 @@ export default function ScorerDashboard() {
     }
 
     hasFinalizedRef.current = true
+    hasGoneLiveRef.current = true
     setGameState(finalState)
     setShowEndMatchModal(false)
 
@@ -530,7 +592,8 @@ export default function ScorerDashboard() {
           )
         }
 
-        // Explicitly clear the terminal-match fields.
+        // Explicitly clear the terminal-match fields and put the match
+        // back into the live state.
         batch.set(
           doc(firestore, "matches", gameState.matchId),
           {
@@ -552,6 +615,9 @@ export default function ScorerDashboard() {
     }
 
     hasFinalizedRef.current = false
+    // A reopened match is live again — lock the guard so we don't push
+    // a redundant "live" write on the next scoring action.
+    hasGoneLiveRef.current = true
     setGameState((prev) => ({
       ...prev,
       status: "live",
@@ -564,7 +630,12 @@ export default function ScorerDashboard() {
   // --- Timers ---
   const toggleGameClock = () => {
     if (isEnded || !hasMatch) return
+    const willRun = !gameState.isGameRunning
     setGameState((p) => ({ ...p, isGameRunning: !p.isGameRunning }))
+    // Pressing START on the game clock is the canonical tip-off signal.
+    if (willRun) {
+      void markMatchLive()
+    }
   }
   const resetGameClock = () => {
     if (isEnded || !hasMatch) return
@@ -596,6 +667,10 @@ export default function ScorerDashboard() {
       showNotice(`${teamName} score updated to ${updatedScore}`)
       return { ...prev, [scoreKey]: updatedScore }
     })
+    // Any positive score means the match is underway.
+    if (delta > 0) {
+      void markMatchLive()
+    }
   }
 
   const modifyPlayerPoints = (team: "A" | "B", playerIndex: number, delta: number) => {
@@ -617,6 +692,9 @@ export default function ScorerDashboard() {
         [rosterKey]: updatedRoster,
       }
     })
+    if (delta > 0) {
+      void markMatchLive()
+    }
   }
 
   const adjustPlayerFouls = (team: "A" | "B", playerIndex: number, delta: number) => {
@@ -653,6 +731,9 @@ export default function ScorerDashboard() {
 
   const confirmResetEntireGame = () => {
     hasFinalizedRef.current = false
+    // A reset sends the match back to "upcoming" from the scorer's view —
+    // clear the live guard so the next scoring action can re-promote it.
+    hasGoneLiveRef.current = false
     setGameState((prev) => ({
       ...EMPTY_STATE,
       matchId: prev.matchId,
@@ -667,6 +748,8 @@ export default function ScorerDashboard() {
       time: prev.time,
       court: prev.court,
       category: prev.category,
+      // Preserve whatever status the match currently has on the server.
+      status: prev.status,
       rosterA: prev.rosterA.map((p) => ({ ...p, points: 0, fouls: 0 })),
       rosterB: prev.rosterB.map((p) => ({ ...p, points: 0, fouls: 0 })),
     }))
@@ -696,6 +779,23 @@ export default function ScorerDashboard() {
       : gameState.winnerId && gameState.winnerId === gameState.teamBId
         ? gameState.teamBName
         : null
+
+  // Header status pill configuration. "READY" while the match is still
+  // upcoming, "LIVE" once the scorer has started it, "MATCH ENDED" after.
+  const statusPill = isEnded
+    ? {
+        label: "MATCH ENDED",
+        className: "bg-red-500/10 border-red-500/30 text-red-400",
+      }
+    : gameState.status === "live"
+      ? {
+          label: "LIVE CONSOLE",
+          className: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
+        }
+      : {
+          label: "READY TO START",
+          className: "bg-amber-500/10 border-amber-500/30 text-amber-400",
+        }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-28 selection:bg-gold-500 selection:text-slate-950">
@@ -822,14 +922,10 @@ export default function ScorerDashboard() {
                   FIBA 3x3 Master Scorer
                 </h1>
                 <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold flex items-center gap-1 shrink-0 ${
-                    isEnded
-                      ? "bg-red-500/10 border-red-500/30 text-red-400"
-                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                  }`}
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold flex items-center gap-1 shrink-0 ${statusPill.className}`}
                 >
                   <Activity className="h-3 w-3 animate-pulse" />
-                  {isEnded ? "MATCH ENDED" : "LIVE CONSOLE"}
+                  {statusPill.label}
                 </span>
               </div>
               <p className="text-xs text-slate-400 truncate">
@@ -955,6 +1051,13 @@ export default function ScorerDashboard() {
                 </span>
               )}
             </div>
+          )}
+          {hasMatch && gameState.status !== "live" && gameState.status !== "finished" && (
+            <p className="mt-3 text-xs text-amber-300">
+              Starting the game clock or recording a score will broadcast this
+              match as <span className="font-bold">LIVE</span> to the Hub, the
+              ticker, and the admin dashboard.
+            </p>
           )}
         </div>
 
