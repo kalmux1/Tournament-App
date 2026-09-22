@@ -94,19 +94,26 @@ const EMPTY_STATE: LiveGameState = {
 const STORAGE_KEY = "imrt_v2_live_game"
 
 /**
- * Fields that get written to Firestore. Clocks are intentionally excluded —
- * they tick once per second locally and would otherwise cause a Firestore
- * write storm. They persist to localStorage so a page reload keeps position.
+ * The scorer only "owns" a narrow slice of a match document: the score,
+ * team fouls, the current period, and the per-player rosters (which carry
+ * their own points/fouls/subbedOut state).
+ *
+ * Fields the admin owns — status, winnerId, endedAt, court, date, time,
+ * category, stage, teamAId/BId, teamA/BName, teamA/BColor — are
+ * intentionally EXCLUDED so an admin edit can never be clobbered by a
+ * routine scorer sync. Transitions the scorer *does* initiate (ending or
+ * reopening a match) write those fields explicitly in their own batch.
  */
 function toSyncPayload(state: LiveGameState) {
-  const {
-    gameTime: _gt,
-    isGameRunning: _igr,
-    shotTime: _st,
-    isShotRunning: _isr,
-    ...rest
-  } = state
-  return rest
+  return {
+    scoreA: state.scoreA,
+    scoreB: state.scoreB,
+    foulsA: state.foulsA,
+    foulsB: state.foulsB,
+    period: state.period,
+    rosterA: state.rosterA,
+    rosterB: state.rosterB,
+  }
 }
 
 export default function ScorerDashboard() {
@@ -130,13 +137,13 @@ export default function ScorerDashboard() {
   const [showResetModal, setShowResetModal] = useState(false)
   const [showEndMatchModal, setShowEndMatchModal] = useState(false)
 
-  const lastLocalEditRef = useRef<number>(0)
-  const lastRemoteWriteRef = useRef<number>(0)
-  const applyingRemoteRef = useRef<boolean>(false)
+  // Timestamp of the last remote snapshot we applied. Used to suppress a
+  // self-echo write: when our own setDoc round-trips back through
+  // onSnapshot, we don't want to immediately write the same payload again.
+  const lastRemoteAppliedRef = useRef<number>(0)
   const hasFinalizedRef = useRef<boolean>(false)
-  // Snapshot of the last payload we actually pushed to Firestore. Used to
-  // short-circuit no-op writes when the debounced effect re-runs with an
-  // object that is referentially new but content-identical.
+  // Snapshot of the last payload we actually pushed to Firestore. Lets us
+  // skip writes that are content-identical to the last successful one.
   const lastSyncedJsonRef = useRef<string>("")
 
   const isEnded = gameState.status === "finished"
@@ -167,7 +174,7 @@ export default function ScorerDashboard() {
         subbedOut: idx >= 3,
       }))
 
-    setGameState({
+    const nextState: LiveGameState = {
       matchId: match.id,
       teamAId: match.teamAId,
       teamBId: match.teamBId,
@@ -193,12 +200,19 @@ export default function ScorerDashboard() {
       time: match.time,
       court: match.court,
       category: match.category,
-    })
+    }
+
+    // Prime the sync guard so loading a match doesn't immediately write
+    // an identical payload back to Firestore.
+    lastSyncedJsonRef.current = JSON.stringify(toSyncPayload(nextState))
     hasFinalizedRef.current = false
+    setGameState(nextState)
     showNotice(`Loaded: ${teamA?.name} vs ${teamB?.name}`)
   }
 
-  // Realtime mirror of the selected match doc
+  // Realtime mirror of the selected match doc. We apply everything the
+  // server sends EXCEPT the local-only clocks, which the scorer keeps in
+  // its own state so a reload doesn't reset them.
   useEffect(() => {
     if (!gameState.matchId || !db || !isFirebaseConfigured) return
     const firestore = db
@@ -206,15 +220,13 @@ export default function ScorerDashboard() {
       doc(firestore, "matches", gameState.matchId),
       (snap) => {
         if (!snap.exists()) return
-        if (Date.now() - lastLocalEditRef.current < 1000) return
         const data = snap.data() as Partial<LiveGameState> & { updatedAt?: unknown }
         const { updatedAt: _u, ...rest } = data
-        lastRemoteWriteRef.current = Date.now()
-        applyingRemoteRef.current = true
-        // Preserve local-only clocks while accepting remote score/roster changes.
+        lastRemoteAppliedRef.current = Date.now()
         setGameState((prev) => ({
           ...prev,
           ...rest,
+          // Preserve local-only clocks.
           gameTime: prev.gameTime,
           isGameRunning: prev.isGameRunning,
           shotTime: prev.shotTime,
@@ -231,26 +243,13 @@ export default function ScorerDashboard() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState))
   }, [gameState])
 
-  // Debounced Firestore sync — triggered ONLY by meaningful state changes.
-  //
-  // We intentionally do NOT depend on `gameState` here. The clock effects
-  // produce a brand new state object every second; depending on that object
-  // would re-create `syncPayload` on every tick and fire a Firestore write
-  // every ~400ms for the duration of the game. Instead we list the fields
-  // that actually go over the wire. Array references (rosterA/rosterB) are
-  // preserved across clock ticks because the tick handlers use spreads that
-  // only replace `gameTime`/`shotTime`, so this dep list is stable.
+  // Debounced Firestore sync. Depends only on the fields the scorer owns,
+  // so clock ticks, remote admin edits, and score changes on the OTHER
+  // team's console never wake this effect unnecessarily.
   const syncPayload = useMemo(
     () => toSyncPayload(gameState),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      gameState.matchId,
-      gameState.teamAId,
-      gameState.teamBId,
-      gameState.teamAName,
-      gameState.teamBName,
-      gameState.teamAColor,
-      gameState.teamBColor,
       gameState.scoreA,
       gameState.scoreB,
       gameState.foulsA,
@@ -258,30 +257,20 @@ export default function ScorerDashboard() {
       gameState.period,
       gameState.rosterA,
       gameState.rosterB,
-      gameState.status,
-      gameState.stage,
-      gameState.date,
-      gameState.time,
-      gameState.court,
-      gameState.category,
-      gameState.winnerId,
-      gameState.endedAt,
     ]
   )
 
   useEffect(() => {
     if (!hasMatch || !db || !isFirebaseConfigured) return
-    if (applyingRemoteRef.current) {
-      applyingRemoteRef.current = false
-      return
-    }
-    if (Date.now() - lastRemoteWriteRef.current < 750) return
 
-    // Skip if nothing actually changed since the last write.
+    // Suppress self-echo writes for a short window after applying a remote
+    // snapshot. 250ms is well above the Firestore local-cache round-trip
+    // and well below anything a human can perceive as latency.
+    if (Date.now() - lastRemoteAppliedRef.current < 250) return
+
     const json = JSON.stringify(syncPayload)
     if (json === lastSyncedJsonRef.current) return
 
-    lastLocalEditRef.current = Date.now()
     const firestore = db
     const timer = setTimeout(async () => {
       try {
@@ -358,7 +347,7 @@ export default function ScorerDashboard() {
         { merge: true }
       )
       lastSyncedJsonRef.current = json
-      lastLocalEditRef.current = Date.now()
+      lastRemoteAppliedRef.current = Date.now()
       showNotice("Scoreboard saved to Firestore")
     } catch (err) {
       console.error("[Scorer] manual save failed:", err)
@@ -399,10 +388,18 @@ export default function ScorerDashboard() {
       try {
         const batch = writeBatch(firestore)
 
-        // 1. Finalize match doc
+        // 1. Finalize match doc. `status`, `winnerId`, `endedAt` are
+        //    explicitly written here — they are NOT part of routine sync,
+        //    so this is the only place the scorer sets them.
         batch.set(
           doc(firestore, "matches", gameState.matchId),
-          { ...toSyncPayload(finalState), updatedAt: serverTimestamp() },
+          {
+            ...toSyncPayload(finalState),
+            status: "finished",
+            winnerId: winnerId ?? null,
+            endedAt: finalState.endedAt,
+            updatedAt: serverTimestamp(),
+          },
           { merge: true }
         )
 
@@ -432,7 +429,7 @@ export default function ScorerDashboard() {
           )
         }
 
-        // 3. Player stats (MVP race) — accumulative increments
+        // 3. Player stats (MVP race)
         const scorersToWrite: Array<{ player: LivePlayer; teamId: string }> = []
         if (teamA) {
           finalState.rosterA.forEach((p) => {
@@ -460,7 +457,7 @@ export default function ScorerDashboard() {
         }
 
         await batch.commit()
-        lastLocalEditRef.current = Date.now()
+        lastRemoteAppliedRef.current = Date.now()
       } catch (err) {
         console.error("[Scorer] end match failed:", err)
         hasFinalizedRef.current = false
@@ -533,14 +530,20 @@ export default function ScorerDashboard() {
           )
         }
 
+        // Explicitly clear the terminal-match fields.
         batch.set(
           doc(firestore, "matches", gameState.matchId),
-          { status: "live", winnerId: null, endedAt: null, updatedAt: serverTimestamp() },
+          {
+            status: "live",
+            winnerId: null,
+            endedAt: null,
+            updatedAt: serverTimestamp(),
+          },
           { merge: true }
         )
 
         await batch.commit()
-        lastLocalEditRef.current = Date.now()
+        lastRemoteAppliedRef.current = Date.now()
       } catch (err) {
         console.error("[Scorer] reopen failed:", err)
         showNotice("Reopen failed — check console")
@@ -597,8 +600,7 @@ export default function ScorerDashboard() {
 
   const modifyPlayerPoints = (team: "A" | "B", playerIndex: number, delta: number) => {
     if (isEnded || !hasMatch) return
-    // FIBA 3x3: only 1- and 2-point baskets exist. Guard against any future
-    // caller (or stale UI) trying to add 3.
+    // FIBA 3x3: only 1- and 2-point baskets exist.
     if (delta !== 1 && delta !== 2 && delta !== -1) return
     const rosterKey = team === "A" ? "rosterA" : "rosterB"
     const scoreKey = team === "A" ? "scoreA" : "scoreB"
