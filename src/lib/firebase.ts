@@ -36,6 +36,15 @@ try {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
       }),
+      // Firestore throws on `undefined` field values by default. Admin
+      // edits build patches with optional fields (round, venue, winnerId,
+      // stage) that are often `undefined`, which used to make the whole
+      // setDoc() throw — the error was caught and logged but nothing was
+      // persisted, so the UI showed the edit until refresh, then reverted.
+      // Enabling this makes `undefined` a no-op: the field is omitted from
+      // the update instead of crashing the write. To actually *clear* a
+      // field, use Firestore's `deleteField()` sentinel.
+      ignoreUndefinedProperties: true,
     })
 
     auth = getAuth(app)

@@ -19,6 +19,7 @@ import {
 } from "firebase/firestore"
 import { db, isFirebaseConfigured } from "@/lib/firebase"
 import { TOURNAMENT } from "@/lib/mockData"
+import { useAuth } from "@/context/AuthContext"
 import type {
   Team,
   Match,
@@ -114,7 +115,26 @@ function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
+/**
+ * Strip `undefined` values from a write patch.
+ *
+ * Firestore's `ignoreUndefinedProperties` setting makes `undefined` a no-op,
+ * but we still strip defensively so callers can reason about exactly what
+ * gets sent over the wire. `deleteField()` sentinels are preserved because
+ * they are not `undefined`.
+ */
+function cleanPatch<T extends object>(patch: T): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) out[k] = v
+  }
+  return out
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
+  const { role } = useAuth()
+  const isAdmin = role === "admin"
+
   const [teams, setTeams] = useState<Team[]>(() => readLocal("teams", []))
   const [matches, setMatches] = useState<Match[]>(() => readLocal("matches", []))
   const [scorers, setScorers] = useState<Scorer[]>(() => readLocal("scorers", []))
@@ -125,29 +145,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     readLocal("tournament", DEFAULT_TOURNAMENT)
   )
 
-  const [useLocalOnly, setUseLocalOnly] = useState<boolean>(
-    () =>
-      localStorage.getItem(KEY("use_local")) === "true" || !isFirebaseConfigured
-  )
+  // Only true when Firebase itself is not configured. Never flipped at
+  // runtime by a permission error — a single 403 on one collection must
+  // not disable the entire app's realtime layer.
+  const useLocalOnly = !isFirebaseConfigured
 
   useEffect(() => {
     migrateStorage()
+    // Remove the stale local-only flag left behind by the old implementation
+    // so anyone who got stuck in local-only mode heals on next load.
+    try {
+      localStorage.removeItem(KEY("use_local"))
+    } catch {
+      /* noop */
+    }
   }, [])
 
-  const fallbackToLocal = (err: any) => {
+  /**
+   * Non-fatal Firestore error handler. Logs the failure with collection
+   * context but does NOT change app mode. A permission error on
+   * `scorers` for a public user is expected; it must not lock the user
+   * out of `teams`/`matches`.
+   */
+  const handleFirestoreError = (err: any, source: string) => {
     if (err?.code === "permission-denied") {
-      console.warn(
-        "[DataContext] Permission denied — switching to local-only mode"
-      )
-      setUseLocalOnly(true)
-      localStorage.setItem(KEY("use_local"), "true")
+      console.warn(`[DataContext] Permission denied reading/writing "${source}".`)
     } else {
-      console.error("[DataContext] Firestore error:", err)
+      console.error(`[DataContext] Firestore error on "${source}":`, err)
     }
   }
 
   useEffect(() => {
-    if (!db || !isFirebaseConfigured || useLocalOnly) return
+    if (!db || useLocalOnly) return
     const firestore = db
     ;(async () => {
       try {
@@ -158,14 +187,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           })
         }
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "tournament bootstrap")
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useLocalOnly])
 
   useEffect(() => {
-    if (!db || !isFirebaseConfigured || useLocalOnly) return
+    if (!db || useLocalOnly) return
     const firestore = db
 
     const unsubTeams = onSnapshot(
@@ -178,7 +207,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setTeams(list)
         localStorage.setItem(KEY("teams"), JSON.stringify(list))
       },
-      fallbackToLocal
+      (err) => handleFirestoreError(err, "teams")
     )
 
     const unsubMatches = onSnapshot(
@@ -190,20 +219,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setMatches(list)
         localStorage.setItem(KEY("matches"), JSON.stringify(list))
       },
-      fallbackToLocal
+      (err) => handleFirestoreError(err, "matches")
     )
 
-    const unsubScorers = onSnapshot(
-      collection(firestore, "scorers"),
-      (snap) => {
-        const list = snap.docs.map(
-          (d) => ({ id: d.id, ...(d.data() as Omit<Scorer, "id">) }) as Scorer
+    // Scorers collection is admin-only. Public users must not subscribe,
+    // or Firestore rejects the read. Previously that rejection flipped the
+    // whole app into local-only mode.
+    const unsubScorers = isAdmin
+      ? onSnapshot(
+          collection(firestore, "scorers"),
+          (snap) => {
+            const list = snap.docs.map(
+              (d) => ({ id: d.id, ...(d.data() as Omit<Scorer, "id">) }) as Scorer
+            )
+            setScorers(list)
+            localStorage.setItem(KEY("scorers"), JSON.stringify(list))
+          },
+          (err) => handleFirestoreError(err, "scorers")
         )
-        setScorers(list)
-        localStorage.setItem(KEY("scorers"), JSON.stringify(list))
-      },
-      fallbackToLocal
-    )
+      : null
 
     const unsubPlayerStats = onSnapshot(
       collection(firestore, "playerStats"),
@@ -215,7 +249,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setPlayerStats(list)
         localStorage.setItem(KEY("player_stats"), JSON.stringify(list))
       },
-      fallbackToLocal
+      (err) => handleFirestoreError(err, "playerStats")
     )
 
     const unsubTournament = onSnapshot(
@@ -227,23 +261,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem(KEY("tournament"), JSON.stringify(data))
         }
       },
-      fallbackToLocal
+      (err) => handleFirestoreError(err, "tournament")
     )
 
     return () => {
       unsubTeams()
       unsubMatches()
-      unsubScorers()
+      if (unsubScorers) unsubScorers()
       unsubPlayerStats()
       unsubTournament()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useLocalOnly])
+  }, [useLocalOnly, isAdmin])
 
   const addTeam: DataContextType["addTeam"] = async (newTeamData) => {
     const newTeam: Team = {
       ...newTeamData,
-      id: `team_${Date.now()}`,
+      id: `team_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       wins: 0,
       losses: 0,
       pointsFor: 0,
@@ -251,7 +285,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       approved: false,
     }
 
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    setTeams((prev) => {
+      const updated = [newTeam, ...prev]
+      localStorage.setItem(KEY("teams"), JSON.stringify(updated))
+      return updated
+    })
+
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         const { id, ...payload } = newTeam
@@ -259,28 +299,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           ...payload,
           createdAt: serverTimestamp(),
         })
-        return newTeam
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "teams:addTeam")
+        throw err
       }
     }
-
-    setTeams((prev) => {
-      const updated = [newTeam, ...prev]
-      localStorage.setItem(KEY("teams"), JSON.stringify(updated))
-      return updated
-    })
     return newTeam
   }
 
   const createTeam: DataContextType["createTeam"] = async (teamData) => {
-    const newTeam: Team = { ...teamData, id: `team_${Date.now()}` }
+    const newTeam: Team = {
+      ...teamData,
+      id: `team_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    }
     setTeams((prev) => {
       const updated = [newTeam, ...prev]
       localStorage.setItem(KEY("teams"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         const { id, ...payload } = newTeam
@@ -289,7 +326,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           createdAt: serverTimestamp(),
         })
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "teams:createTeam")
+        throw err
       }
     }
     return newTeam
@@ -301,12 +339,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("teams"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
-        await setDoc(doc(firestore, "teams", teamId), patch, { merge: true })
+        await setDoc(doc(firestore, "teams", teamId), cleanPatch(patch), {
+          merge: true,
+        })
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "teams:updateTeam")
+        throw err
       }
     }
   }
@@ -332,7 +373,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return updated
     })
 
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await deleteDoc(doc(firestore, "teams", teamId))
@@ -359,7 +400,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           })
         )
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "teams:deleteTeam")
+        throw err
       }
     }
   }
@@ -370,12 +412,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("teams"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await setDoc(doc(firestore, "teams", teamId), { approved }, { merge: true })
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "teams:updateStatus")
+        throw err
       }
     }
   }
@@ -393,7 +436,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("matches"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await setDoc(
@@ -402,7 +445,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           { merge: true }
         )
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "matches:updateScore")
+        throw err
       }
     }
   }
@@ -413,12 +457,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("matches"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
-        await setDoc(doc(firestore, "matches", matchId), patch, { merge: true })
+        await setDoc(doc(firestore, "matches", matchId), cleanPatch(patch), {
+          merge: true,
+        })
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "matches:updateMatch")
+        // Rethrow so the caller (e.g. MatchFormModal) can surface the failure
+        // instead of closing as if the save succeeded.
+        throw err
       }
     }
   }
@@ -427,23 +476,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const localMatch: Match = {
       ...newMatchData,
       source: newMatchData.source ?? "manual",
-      id: `match_${Date.now()}`,
+      id: `match_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     }
     setMatches((prev) => {
       const updated = [localMatch, ...prev]
       localStorage.setItem(KEY("matches"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await setDoc(doc(firestore, "matches", localMatch.id), {
-          ...newMatchData,
+          ...cleanPatch(newMatchData),
           source: newMatchData.source ?? "manual",
           createdAt: serverTimestamp(),
         })
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "matches:addMatch")
+        throw err
       }
     }
   }
@@ -454,12 +504,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("matches"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await deleteDoc(doc(firestore, "matches", matchId))
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "matches:deleteMatch")
+        throw err
       }
     }
   }
@@ -473,7 +524,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const toCreate: Match[] = newMatches.map((m, i) => ({
         ...m,
         source,
-        id: `match_${ts}_${i}`,
+        id: `match_${ts}_${i}_${Math.random().toString(36).slice(2, 6)}`,
       }))
 
       setMatches((prev) => {
@@ -484,7 +535,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return updated
       })
 
-      if (db && isFirebaseConfigured && !useLocalOnly) {
+      if (db && !useLocalOnly) {
         const firestore = db
         try {
           const batch = writeBatch(firestore)
@@ -494,13 +545,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           for (const m of toCreate) {
             const { id, ...payload } = m
             batch.set(doc(firestore, "matches", id), {
-              ...payload,
+              ...cleanPatch(payload),
               createdAt: serverTimestamp(),
             })
           }
           await batch.commit()
         } catch (err) {
-          fallbackToLocal(err)
+          handleFirestoreError(err, "matches:replaceGenerated")
+          throw err
         }
       }
 
@@ -508,21 +560,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
   const addScorer = async (newScorerData: Omit<Scorer, "id">) => {
-    const localScorer: Scorer = { ...newScorerData, id: `scorer_${Date.now()}` }
+    const localScorer: Scorer = {
+      ...newScorerData,
+      id: `scorer_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    }
     setScorers((prev) => {
       const updated = [...prev, localScorer]
       localStorage.setItem(KEY("scorers"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await setDoc(doc(firestore, "scorers", localScorer.id), {
-          ...newScorerData,
+          ...cleanPatch(newScorerData),
           createdAt: serverTimestamp(),
         })
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "scorers:addScorer")
+        throw err
       }
     }
   }
@@ -533,12 +589,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("scorers"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await deleteDoc(doc(firestore, "scorers", scorerId))
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "scorers:deleteScorer")
+        throw err
       }
     }
   }
@@ -551,16 +608,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(KEY("tournament"), JSON.stringify(updated))
       return updated
     })
-    if (db && isFirebaseConfigured && !useLocalOnly) {
+    if (db && !useLocalOnly) {
       const firestore = db
       try {
         await setDoc(
           doc(firestore, "tournament", "config"),
-          { ...newSettings },
+          cleanPatch(newSettings),
           { merge: true }
         )
       } catch (err) {
-        fallbackToLocal(err)
+        handleFirestoreError(err, "tournament:updateSettings")
+        throw err
       }
     }
   }

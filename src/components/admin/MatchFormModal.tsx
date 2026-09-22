@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react"
 import { X, Check, Trash2, AlertTriangle } from "lucide-react"
+import { deleteField } from "firebase/firestore"
 import { useData } from "@/context/DataContext"
 import type { Category, Match, MatchStatus } from "@/lib/types"
 
@@ -54,6 +55,7 @@ export default function MatchFormModal({
 
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Eligible teams for this category. Always include whichever teams are
   // already on this match (in case the match was created before a category
@@ -86,28 +88,42 @@ export default function MatchFormModal({
     if (teamAId === teamBId) return
 
     setSaving(true)
+    setError(null)
     try {
-      const patch: Partial<Match> = {
+      // Use `deleteField()` to actually clear optional fields. `undefined`
+      // is a no-op once ignoreUndefinedProperties is enabled, so it would
+      // leave a stale `round`/`stage`/`venue`/`winnerId` on the document.
+      const patch: Record<string, unknown> = {
         court: court.trim() || match.court,
         category,
         teamAId,
         teamBId,
         date,
         time,
-        round: round.trim() || undefined,
-        stage,
+        round: round.trim() || deleteField(),
+        stage: stage ?? deleteField(),
         status,
         scoreA: Math.max(0, scoreA),
         scoreB: Math.max(0, scoreB),
-        venue: venue.trim() || undefined,
-        // Only set winnerId when the match is finished; clear it otherwise.
-        winnerId: status === "finished" ? derivedWinnerId : undefined,
+        venue: venue.trim() || deleteField(),
+        winnerId:
+          status === "finished" && derivedWinnerId
+            ? derivedWinnerId
+            : deleteField(),
       }
-      await updateMatch(match.id, patch)
+
+      await updateMatch(match.id, patch as Partial<Match>)
       onSaved?.()
       onClose()
-    } catch (err) {
+    } catch (err: any) {
       console.error("[MatchFormModal] save failed:", err)
+      setError(
+        err?.code === "permission-denied"
+          ? "You do not have permission to edit this match."
+          : "Save failed. Check the browser console for details."
+      )
+      // Intentionally DO NOT close the modal — the admin needs to see the
+      // failure so they don't assume the save went through.
     } finally {
       setSaving(false)
     }
@@ -118,8 +134,9 @@ export default function MatchFormModal({
     try {
       await deleteMatch(match.id)
       onClose()
-    } catch (err) {
+    } catch (err: any) {
       console.error("[MatchFormModal] delete failed:", err)
+      setError("Delete failed. Check the browser console for details.")
     } finally {
       setSaving(false)
     }
@@ -160,6 +177,14 @@ export default function MatchFormModal({
         </div>
 
         <form onSubmit={handleSave} className="space-y-6 p-6">
+          {/* Error banner */}
+          {error && (
+            <div className="flex items-start gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Match Info */}
           <section className="space-y-4">
             <h3 className="font-display text-sm font-bold uppercase tracking-wider text-gold-500">
@@ -294,11 +319,7 @@ export default function MatchFormModal({
                 >
                   <option value="">— TBD —</option>
                   {eligibleTeams.map((t) => (
-                    <option
-                      key={t.id}
-                      value={t.id}
-                      disabled={t.id === teamBId}
-                    >
+                    <option key={t.id} value={t.id} disabled={t.id === teamBId}>
                       {t.name} (Pool {t.pool})
                     </option>
                   ))}
@@ -317,11 +338,7 @@ export default function MatchFormModal({
                 >
                   <option value="">— TBD —</option>
                   {eligibleTeams.map((t) => (
-                    <option
-                      key={t.id}
-                      value={t.id}
-                      disabled={t.id === teamAId}
-                    >
+                    <option key={t.id} value={t.id} disabled={t.id === teamAId}>
                       {t.name} (Pool {t.pool})
                     </option>
                   ))}
